@@ -1,0 +1,354 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Campo 3D — mapa de presença em bloco de terra</title>
+<style>
+/* MAPA DO ARQUIVO — atualizar ao adicionar/remover seções grandes
+   1-32     CSS da página de demo (moldura do card, só contexto)
+   33-237   CSS do componente .campo3d — É AQUI QUE MORA O MODELO 3D
+   240-246  HTML (o card de demonstração)
+   248-fim  JS: escala de cor, montagem do esqueleto, pintura das células, demo
+   Não há bloco de dados embutido: a grade da demo é gerada por função.
+*/
+
+/* ---- página de demo: só uma moldura de exemplo, o que importa é .campo3d ---- */
+:root{ --bg:#08130d; --glass:rgba(11,26,18,.86); --line:rgba(255,255,255,.10);
+       --gold:#F5CE3B; --ink-60:rgba(255,255,255,.62); --ink-35:rgba(255,255,255,.35); }
+*{box-sizing:border-box;margin:0;padding:0}
+body{ min-height:100vh; background:var(--bg); color:#fff; padding:40px 20px;
+      font-family:'Segoe UI',system-ui,-apple-system,Roboto,Helvetica,Arial,sans-serif;
+      display:flex; flex-wrap:wrap; gap:22px; align-items:flex-start; justify-content:center; }
+.card{ width:300px; background:var(--glass); border:1px solid var(--line); border-radius:16px;
+       overflow:hidden; box-shadow:0 18px 40px -24px rgba(0,0,0,.9); }
+.card-top{ padding:14px 16px 4px }
+.card-top b{ font-size:13px; letter-spacing:.2px }
+.card-body{ padding:6px 12px 14px }
+.card-foot{ display:flex; justify-content:space-between; align-items:baseline; padding:11px 14px 13px;
+            border-top:1px solid var(--line) }
+.card-foot b{ font-size:12.5px; letter-spacing:.3px; font-weight:700 }
+.card-foot span{ font-size:10.5px; letter-spacing:1.3px; text-transform:uppercase; color:var(--ink-35); font-weight:700 }
+
+/* ===========================================================================
+   CAMPO 3D — bloco de terra flutuante com heatmap na superfície.
+   100% CSS: nenhuma imagem, nenhum canvas, nenhuma dependência.
+
+   Esqueleto gerado por campo3D() (ver comentário no JS):
+     .campo3d              caixa do componente — define --w, o ângulo e o tamanho projetado
+       .c3-sombra          elipse borrada no "chão", fora da cena 3D (efeito de flutuar)
+       .c3-flutua          wrapper do bob suave (anima transform sem brigar com a rotação)
+         .c3-cena          preserve-3d: rotateX (inclinação) + rotateZ (giro no plano)
+           .c3-topo        face de cima — gramado > calor > marcações > sombra das goleiras
+             .c3-pista     recorte do campo marcado (o gramado sobra --m além das linhas)
+           .c3-lado.s/.o   as duas paredes de terra visíveis nesse ângulo
+           .c3-gol.n/.s    goleiras: planos verticais em pé sobre a linha de fundo
+       .c3-poeira          grãos de terra caindo da borda quebrada (fora da cena 3D)
+
+   Só as 2 paredes visíveis existem — as outras 2 nunca aparecem e não são criadas
+   (menos DOM e zero risco de z-fighting entre faces).
+
+   LUZ: uma única direção em todo o componente — vem do alto-esquerda. Daí saem o
+   degradê do gramado, a parede sul mais escura (é a que dá as costas pra luz) e o
+   ângulo em que a sombra das goleiras cai no gramado (pra baixo e pra direita).
+   ============================================================================= */
+.campo3d{
+  --w:150px;                                  /* única medida a mexer: largura do campo marcado */
+  --h:calc(var(--w)*1.545);                   /* proporção oficial 68 x 105 m */
+  --m:calc(var(--w)*0.085);                   /* sobra de gramado além das linhas */
+  --bw:calc(var(--w) + var(--m)*2);           /* o bloco é o campo + a sobra dos dois lados */
+  --bh:calc(var(--h) + var(--m)*2);
+  --d:calc(var(--w)*0.0575);                  /* espessura da camada de terra */
+  /* a goleira oficial (7,32 x 2,44 m = 10,8% x 3,6% da largura do campo) some num
+     card desse tamanho: --gol-esc é o exagero proporcional aplicado às duas medidas
+     de uma vez, então ela cresce sem deformar (segue 3:1, como a de verdade) */
+  --gol-esc:1.85;
+  --wgol:calc(var(--w)*0.108*var(--gol-esc));
+  --hgol:calc(var(--w)*0.036*var(--gol-esc));
+  --faixa:calc(var(--w)/8);                   /* largura de uma faixa do corte de grama */
+  --rz:26deg;                                 /* giro no plano (ângulo do campo na tela) */
+  --rx:58deg;                                 /* inclinação (0 = visto de cima, 90 = de lado) */
+  --lw:max(1px, calc(var(--w)*0.0085));       /* espessura das linhas de marcação */
+  --linha:rgba(255,255,255,.66);
+  --borrao:calc(var(--w)*0.052);              /* raio do blur que funde as células de calor */
+  position:relative; margin-inline:auto;
+  /* tamanho projetado na tela, deduzido do próprio ângulo — o card não precisa
+     adivinhar altura: mudar --rz/--rx/--w reajusta a caixa sozinho */
+  width:calc(var(--bw)*cos(var(--rz)) + var(--bh)*sin(var(--rz)));
+  height:calc((var(--bw)*sin(var(--rz)) + var(--bh)*cos(var(--rz)))*cos(var(--rx))
+              + var(--d)*sin(var(--rx)) + var(--hgol)*sin(var(--rx))
+              + var(--w)*0.11);               /* folga embaixo pra poeira cair sem vazar do card */
+  perspective:calc(var(--w)*7); perspective-origin:50% 40%;
+}
+.c3-sombra{ position:absolute; left:50%; top:58%; width:76%; height:46%;
+  transform:translate(-50%,-50%); border-radius:50%; filter:blur(calc(var(--w)*0.06));
+  background:radial-gradient(ellipse at 50% 50%, rgba(0,0,0,.62), rgba(0,0,0,.30) 46%, transparent 72%); }
+.c3-flutua{ position:absolute; left:50%; top:50%; width:var(--bw); height:var(--bh);
+  transform-style:preserve-3d;
+  /* recentraliza: sobe metade da extrusão (que só cresce para baixo na tela) mais
+     metade da folga da poeira, pra toda essa folga sobrar embaixo do bloco */
+  --sobe:calc(var(--d)*sin(var(--rx))*-0.5 - var(--w)*0.055);
+  transform:translate(-50%,-50%) translateY(var(--sobe));
+  animation:c3-bob 7.5s ease-in-out infinite; }
+@keyframes c3-bob{ 50%{ transform:translate(-50%,-50%) translateY(calc(var(--sobe) - 5px)) } }
+@media (prefers-reduced-motion:reduce){ .c3-flutua{ animation:none } }
+.c3-cena{ position:absolute; inset:0; transform-style:preserve-3d;
+  transform:rotateX(var(--rx)) rotateZ(calc(-1*var(--rz))); }
+
+/* --- face de cima: gramado -------------------------------------------------
+   sete camadas, de cima pra baixo: (1) luz do alto-esquerda + vinheta, (2) fios
+   em diagonal, alternando um claro e um escuro, (3+4) tufos claros e escuros em
+   duas malhas de tamanhos diferentes — é o que tira o aspecto de cor chapada,
+   (5) a costura entre faixas, (6) o relevo do rolo do cortador (cada faixa com um
+   lado iluminado e outro na sombra) e (7) as faixas do corte propriamente ditas. */
+.c3-topo{ position:absolute; inset:0; overflow:hidden; border-radius:calc(var(--w)*0.02);
+  background:
+    linear-gradient(115deg, rgba(255,255,255,.11), rgba(255,255,255,0) 42%, rgba(0,0,0,.24)),
+    repeating-linear-gradient(99deg, rgba(255,255,255,.06) 0 1px, rgba(0,0,0,.055) 1px 2.2px, transparent 2.2px 4.5px),
+    repeating-radial-gradient(circle at 30% 35%, rgba(255,255,255,.055) 0 1.1px, transparent 1.9px),
+    repeating-radial-gradient(circle at 68% 66%, rgba(0,0,0,.14) 0 1.2px, transparent 2.1px),
+    repeating-linear-gradient(90deg, rgba(0,0,0,.20) 0 1px, transparent 1px var(--faixa)),
+    repeating-linear-gradient(90deg, rgba(255,255,255,.075) 0, rgba(255,255,255,0) calc(var(--faixa)*.55),
+      rgba(0,0,0,.10) var(--faixa), rgba(0,0,0,0) calc(var(--faixa)*1.55),
+      rgba(255,255,255,.075) calc(var(--faixa)*2)),
+    repeating-linear-gradient(90deg, #26603a 0 var(--faixa), #1f5330 var(--faixa) calc(var(--faixa)*2));
+  background-size:auto, auto, 9px 7px, 13px 11px, auto, auto, auto;
+  box-shadow:inset 0 0 calc(var(--w)*0.12) rgba(0,0,0,.35); }
+
+/* --- nuvem de calor ---------------------------------------------------------
+   mesma escala do heatmap 2D (azul->verde->amarelo->vermelho) e mesma curva de
+   opacidade: some abaixo de ~10% de presença, então o contorno da nuvem fica
+   orgânico em vez de um retângulo pintado. O blur no container é o que funde as
+   células num gradiente contínuo — e como filter achata o 3D, ele precisa ficar
+   AQUI DENTRO da face (que já é plana), nunca no .c3-cena.
+   .c3-pista existe pra que as porcentagens do JS sejam relativas ao campo
+   MARCADO, e não ao bloco inteiro — o JS não sabe que existe sobra de gramado. */
+.c3-pista{ position:absolute; inset:var(--m) }
+.c3-calor{ position:absolute; inset:0; filter:blur(var(--borrao)); }
+.c3-calor i{ position:absolute; display:block }
+.c3-brilho{ position:absolute; width:34%; aspect-ratio:1; border-radius:50%;
+  transform:translate(-50%,-50%); mix-blend-mode:screen; filter:blur(calc(var(--w)*0.09)); }
+.c3-topo.trocando .c3-calor,.c3-topo.trocando .c3-brilho{ animation:c3-entra .45s ease both }
+@keyframes c3-entra{ from{ opacity:0 } to{ opacity:1 } }
+
+/* --- marcações do campo (medidas oficiais em % do campo) ------------------- */
+.c3-linhas{ position:absolute; inset:var(--m); overflow:hidden }
+.c3-linhas i{ position:absolute; border:var(--lw) solid var(--linha) }
+.c3-linhas .borda{ inset:0 }
+.c3-linhas .meio{ left:0; right:0; top:50%; border-width:var(--lw) 0 0 }
+.c3-linhas .circulo{ left:50%; top:50%; width:26.9%; aspect-ratio:1; border-radius:50%;
+  transform:translate(-50%,-50%) }
+.c3-linhas .area{ left:20.35%; width:59.3%; height:15.7% }
+.c3-linhas .pequena{ left:36.55%; width:26.9%; height:5.24% }
+.c3-linhas .n{ top:0 } .c3-linhas .s{ bottom:0 }
+.c3-linhas .canto{ width:4%; aspect-ratio:1; border-radius:50% }      /* vira arco: .c3-linhas corta */
+.c3-linhas .canto.no{ left:-2%; top:-2%} .c3-linhas .canto.ne{ right:-2%; top:-2%}
+.c3-linhas .canto.so{ left:-2%; bottom:-2%} .c3-linhas .canto.se{ right:-2%; bottom:-2%}
+.c3-linhas .ponto{ width:1.7%; aspect-ratio:1; border:0; border-radius:50%; background:var(--linha);
+  left:50%; transform:translate(-50%,-50%) }
+.c3-linhas .ponto.centro{ top:50% } .c3-linhas .ponto.pn{ top:10.5% } .c3-linhas .ponto.ps{ top:89.5% }
+
+/* --- goleiras --------------------------------------------------------------
+   um plano vertical em pé sobre cada linha de fundo: a aresta de baixo fica
+   colada na linha (transform-origin embaixo) e o rotateX(-90deg) levanta o resto
+   pra fora do gramado (+Z). Tamanho em --wgol/--hgol (ver --gol-esc lá em cima).
+   Borda = travessão e postes; o xadrez por dentro = a rede. */
+.c3-gol{ position:absolute; left:calc(var(--m) + var(--w)*0.5 - var(--wgol)*0.5); width:var(--wgol);
+  height:var(--hgol); transform-origin:0 100%; transform:rotateX(-90deg);
+  border:var(--lw) solid rgba(255,255,255,.88); border-bottom:0;
+  background:
+    repeating-linear-gradient(90deg, rgba(255,255,255,.32) 0 .7px, transparent .7px 3.2px),
+    repeating-linear-gradient(0deg,  rgba(255,255,255,.24) 0 .7px, transparent .7px 3.2px),
+    rgba(255,255,255,.05); }
+.c3-gol.n{ top:calc(var(--m) - var(--hgol)) }
+.c3-gol.s{ top:calc(var(--m) + var(--h) - var(--hgol)) }
+
+/* sombra das goleiras no gramado: o retângulo da baliza deitado no chão e
+   cisalhado — skewX empurra a base pro lado à medida que ela se afasta, que é
+   exatamente o que uma luz alta vinda do alto-esquerda faria. Fica DEPOIS das
+   marcações e em multiply, então escurece também a linha de fundo por baixo. */
+.c3-sombra-gol{ position:absolute; left:calc(var(--m) + var(--w)*0.5 - var(--wgol)*0.5); width:var(--wgol);
+  height:calc(var(--hgol)*1.33); transform-origin:0 0; transform:skewX(34deg);
+  mix-blend-mode:multiply; filter:blur(.7px);
+  background:linear-gradient(180deg, rgba(0,0,0,.52), rgba(0,0,0,.44) 35%, rgba(0,0,0,.10)); }
+.c3-sombra-gol.n{ top:var(--m) }
+.c3-sombra-gol.s{ top:calc(var(--m) + var(--h)) }
+
+/* --- paredes de terra -------------------------------------------------------
+   geometria: cada parede nasce colada numa aresta do topo (transform-origin na
+   aresta) e tomba 90° para dentro da profundidade (-Z). A textura é um degradê
+   de solo + duas camadas de grãos em radial-gradient (pedrisco claro e escuro).
+   A faixa de grama viva no topo vem em px, e não em %, pra continuar legível por
+   mais fina que a camada de terra fique.
+
+   ATENÇÃO ao eixo: as duas paredes têm a profundidade em eixos LOCAIS diferentes.
+   Na sul, a profundidade é o eixo y do elemento (altura = --d); na oeste, é o
+   eixo x (largura = --d), porque ela tomba com rotateY. Por isso o degradê do
+   solo é orientado por --ang, e não fixo em 180deg — senão a parede oeste sairia
+   com a grama numa ponta e o subsolo na outra, ao longo do comprimento do campo.
+
+   A borda de baixo é recortada com clip-path num perfil irregular, como se o
+   bloco tivesse sido arrancado do chão — nunca passa de ~38% da espessura, então
+   continua lendo como uma quebra do torrão e não como um serrilhado decorativo. */
+.c3-lado{ position:absolute; --ang:180deg; background:
+    repeating-radial-gradient(circle at 21% 34%, rgba(255,255,255,.09) 0 1px, transparent 1.7px),
+    repeating-radial-gradient(circle at 68% 71%, rgba(0,0,0,.34) 0 1.3px, transparent 2.2px),
+    linear-gradient(var(--ang),
+      #3f7f4b 0 1.6px, #2c5b35 1.6px 2.8px, #6d4c2c 2.8px 40%,
+      #57391f 40% 62%, #3d2716 62% 82%, #2a1a0e 82% 100%);
+  background-size:8px 7px, 11px 6px, auto; }
+.c3-lado.s{ left:0; top:100%; width:var(--bw); height:var(--d);
+  transform-origin:0 0; transform:rotateX(-90deg); filter:brightness(.78);   /* de costas pra luz */
+  clip-path:polygon(0 0, 100% 0, 100% 78%, 96.5% 96%, 93% 70%, 89% 90%, 85.5% 66%, 82% 94%,
+    78% 74%, 74.5% 88%, 71% 64%, 67% 92%, 63.5% 72%, 60% 96%, 56% 68%, 52.5% 86%, 49% 62%,
+    45% 90%, 41.5% 74%, 38% 94%, 34% 66%, 30.5% 88%, 27% 70%, 23% 96%, 19.5% 72%, 16% 84%,
+    12% 64%, 8.5% 92%, 5% 70%, 0 86%); }
+.c3-lado.o{ left:0; top:0; width:var(--d); height:var(--bh); --ang:90deg;
+  transform-origin:0 0; transform:rotateY(90deg);
+  clip-path:polygon(0 0, 84% 0, 66% 3.5%, 92% 7%, 70% 10.5%, 96% 14%, 64% 17.5%, 88% 21%,
+    72% 24.5%, 94% 28%, 62% 31.5%, 90% 35%, 68% 38.5%, 86% 42%, 74% 45.5%, 98% 49%, 66% 52.5%,
+    92% 56%, 70% 59.5%, 84% 63%, 60% 66.5%, 94% 70%, 72% 73.5%, 88% 77%, 64% 80.5%, 96% 84%,
+    68% 87.5%, 90% 91%, 74% 94.5%, 86% 100%, 0 100%); }
+
+/* --- partículas de terra caindo --------------------------------------------
+   ficam FORA da cena 3D, na frente de tudo: são grãos soltos, não precisam de
+   perspectiva, e assim não entram na ordenação de planos do preserve-3d. As
+   posições de origem acompanham à mão a silhueta inferior do bloco (um "V" com o
+   vértice no canto mais próximo) — se --rz/--rx mudarem muito, é aqui que se
+   reencosta a poeira na borda. */
+.c3-poeira{ position:absolute; inset:0; pointer-events:none }
+.c3-poeira i{ position:absolute; width:2px; height:2px; border-radius:50%; opacity:0;
+  background:#5d4127; animation:c3-cai 3.4s linear infinite }
+@keyframes c3-cai{
+  0%  { opacity:0;   transform:translate(0,-3px) scale(1) }
+  14% { opacity:.9 }
+  65% { opacity:.45 }
+  100%{ opacity:0;   transform:translate(3px,15px) scale(.55) }
+}
+.c3-poeira i:nth-child(1){ left:8%;  top:36%; animation-delay:-.2s; animation-duration:3.1s }
+.c3-poeira i:nth-child(2){ left:15%; top:49%; animation-delay:-1.7s; width:1.5px; height:1.5px }
+.c3-poeira i:nth-child(3){ left:23%; top:63%; animation-delay:-.9s; animation-duration:4.1s }
+.c3-poeira i:nth-child(4){ left:31%; top:78%; animation-delay:-2.6s; width:2.5px; height:2.5px }
+.c3-poeira i:nth-child(5){ left:42%; top:94%; animation-delay:-.5s; animation-duration:3.7s }
+.c3-poeira i:nth-child(6){ left:53%; top:90%; animation-delay:-2.1s; width:1.5px; height:1.5px }
+.c3-poeira i:nth-child(7){ left:64%; top:85%; animation-delay:-1.2s; animation-duration:4.4s }
+.c3-poeira i:nth-child(8){ left:76%; top:80%; animation-delay:-3.0s; width:2.5px; height:2.5px }
+.c3-poeira i:nth-child(9){ left:88%; top:76%; animation-delay:-1.5s; animation-duration:3.3s }
+@media (prefers-reduced-motion:reduce){ .c3-poeira{ display:none } }
+</style>
+</head>
+<body>
+
+<div class="card">
+  <div class="card-top"><b>Mapa de Presença</b></div>
+  <div class="card-body"><div class="campo3d" data-pos="CM"></div></div>
+  <div class="card-foot"><b>Meio-campo</b><span>--w:155px</span></div>
+</div>
+
+<script>
+"use strict";
+/* ===========================================================================
+   CAMPO 3D PARA CARD — CSS puro, sem dependências.
+   O JS aqui só faz duas coisas: montar o esqueleto (para o consumidor escrever
+   uma <div> só) e traduzir a grade de intensidades em células coloridas.
+
+   Uso:  <div class="campo3d"></div>
+         const c = campo3D(el, { cols:16, rows:24 });
+         c.pintar(HEATMAP_POINTS[playerId]);     // array cols*rows, 0..1
+   =========================================================================== */
+const C3_STOPS=[[43,101,214],[56,217,138],[245,206,59],[224,72,63]];
+function c3Cor(w){                          /* frio (pouca presença) -> quente (muita) */
+  const t=Math.max(0,Math.min(1,w))*(C3_STOPS.length-1);
+  const i=Math.min(C3_STOPS.length-2,Math.floor(t)), f=t-i;
+  const a=C3_STOPS[i], b=C3_STOPS[i+1];
+  return `rgb(${Math.round(a[0]+(b[0]-a[0])*f)},${Math.round(a[1]+(b[1]-a[1])*f)},${Math.round(a[2]+(b[2]-a[2])*f)})`;
+}
+function c3Op(w){                           /* smoothstep: 0 abaixo do piso, 1 acima do teto */
+  const lo=0.10, hi=0.55;
+  const t=Math.max(0,Math.min(1,(w-lo)/(hi-lo)));
+  return t*t*(3-2*t)*0.94;
+}
+
+const C3_HTML=`
+<div class="c3-sombra"></div>
+<div class="c3-flutua"><div class="c3-cena">
+  <div class="c3-topo">
+    <div class="c3-pista">
+      <div class="c3-calor"></div>
+      <div class="c3-brilho"></div>
+    </div>
+    <div class="c3-linhas">
+      <i class="borda"></i><i class="meio"></i><i class="circulo"></i>
+      <i class="area n"></i><i class="area s"></i>
+      <i class="pequena n"></i><i class="pequena s"></i>
+      <i class="ponto centro"></i><i class="ponto pn"></i><i class="ponto ps"></i>
+      <i class="canto no"></i><i class="canto ne"></i><i class="canto so"></i><i class="canto se"></i>
+    </div>
+    <div class="c3-sombra-gol n"></div>
+    <div class="c3-sombra-gol s"></div>
+  </div>
+  <div class="c3-lado s"></div>
+  <div class="c3-lado o"></div>
+  <div class="c3-gol n"></div>
+  <div class="c3-gol s"></div>
+</div></div>
+<div class="c3-poeira"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>`;
+
+function campo3D(el, opts){
+  const o = Object.assign({ cols:16, rows:24 }, opts||{});
+  el.innerHTML = C3_HTML;
+  const topo   = el.querySelector('.c3-topo');
+  const calor  = el.querySelector('.c3-calor');
+  const brilho = el.querySelector('.c3-brilho');
+
+  return {
+    /* grade: array de o.cols*o.rows intensidades 0..1, varrendo linha a linha */
+    pintar(grade){
+      const g = grade || [];
+      const cw = 100/o.cols, ch = 100/o.rows;
+      let pico=0, px=50, py=50, html='';
+      for(let i=0;i<g.length;i++){
+        const w=g[i], c=i%o.cols, r=Math.floor(i/o.cols);
+        if(w>pico){ pico=w; px=(c+0.5)*cw; py=(r+0.5)*ch; }
+        const op=c3Op(w);
+        if(op<=0.01) continue;
+        /* +0.9% no tamanho: as células se sobrepõem de leve e o blur não deixa
+           aparecer a malha da grade entre elas */
+        html+=`<i style="left:${(c*cw).toFixed(2)}%;top:${(r*ch).toFixed(2)}%;`
+            + `width:${(cw+0.9).toFixed(2)}%;height:${(ch+0.9).toFixed(2)}%;`
+            + `background:${c3Cor(w)};opacity:${op.toFixed(2)}"></i>`;
+      }
+      calor.innerHTML = html;
+      brilho.style.left = px.toFixed(1)+'%';
+      brilho.style.top  = py.toFixed(1)+'%';
+      brilho.style.background = `radial-gradient(circle, ${c3Cor(pico)} 0%, transparent 70%)`;
+      brilho.style.opacity = (0.20+0.32*pico).toFixed(2);
+      topo.classList.remove('trocando'); void topo.offsetWidth; topo.classList.add('trocando');
+    },
+    destruir(){ el.innerHTML=''; }
+  };
+}
+
+/* ---------- demo: grade sintética, mesma matemática do dashboard ----------
+   campo gaussiano em torno das zonas-base da posição, normalizado pelo pico. */
+function c3Demo(bases, sigma, cols, rows){
+  const grid=[]; let pico=0;
+  for(let r=0;r<rows;r++){
+    for(let c=0;c<cols;c++){
+      const u=(c+0.5)/cols, v=(r+0.5)/rows;
+      let val=0;
+      bases.forEach(b=>{ val=Math.max(val, Math.exp(-((u-b[0])**2+(v-b[1])**2)/(2*sigma*sigma))); });
+      grid.push(val);
+      if(val>pico) pico=val;
+    }
+  }
+  return pico ? grid.map(v=>v/pico) : grid;
+}
+
+document.querySelectorAll('.campo3d').forEach(el=>{
+  const c = campo3D(el);
+  c.pintar(c3Demo([[0.50,0.62],[0.34,0.50],[0.66,0.50]], 0.24, 16, 24));   // meio-campo
+});
+</script>
+</body>
+</html>

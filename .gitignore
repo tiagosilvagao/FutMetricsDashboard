@@ -1,0 +1,4 @@
+.DS_Store
+.claude/
+.frame_tmp.jpg
+*.tar.gz

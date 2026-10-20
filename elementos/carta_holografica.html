@@ -1,0 +1,532 @@
+<meta charset="UTF-8">
+<title>Carta Holográfica — Protótipo</title>
+<!--
+  MOVIMENTO 3D E ILUMINAÇÃO DINÂMICA
+  Técnica adaptada de "Pokémon Cards CSS" de Simon Goellner (@simeydotme),
+  https://github.com/simeydotme/pokemon-cards-css — MIT License.
+  Copiamos o MECANISMO (estrutura aninhada translate/rotate, física de mola,
+  variáveis de ponteiro e as três camadas de luz); o design visual é o do projeto.
+
+  As quatro peças da técnica:
+  1. Estrutura aninhada: .card-float (translada/flutua) > .card (rotaciona).
+     Separar os dois evita que a animação de flutuar e a rotação disputem a mesma
+     propriedade `transform` — antes era preciso desligar a animação ao inclinar.
+  2. Física de mola: o ponteiro define um ALVO, e a carta persegue esse alvo quadro
+     a quadro. É isso que dá o peso/inércia — nada de transition linear.
+  3. Variáveis CSS de ponteiro alimentadas por JS: as camadas de luz leem essas
+     variáveis, então o CSS faz todo o trabalho visual.
+  4. Três camadas de luz sobrepostas, cada uma com seu mix-blend-mode.
+-->
+<style>
+:root{
+  --bg-0:#050c08;
+  --bg-1:#081c12;
+  --card-1:#0d2a1c;
+  --card-2:#0a3d27;
+  --gold:#F5CE3B;
+  --gold-soft:#FFE9A8;
+  --green:#38D98A;
+  --ink:#ffffff;
+  --ink-60:rgba(255,255,255,.62);
+  --ink-40:rgba(255,255,255,.36);
+  --tier-neutral-1:#3a4440;
+  --tier-neutral-2:#232b27;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{background:var(--bg-0);color:var(--ink)}
+body{
+  min-height:100%;
+  font-family:'Segoe UI',system-ui,-apple-system,Roboto,Helvetica,Arial,sans-serif;
+  -webkit-font-smoothing:antialiased;
+  padding:56px 20px 80px;
+  display:flex;flex-direction:column;align-items:center;gap:52px;
+  background:
+    radial-gradient(120% 70% at 50% -10%, rgba(56,217,138,.14), transparent 60%),
+    radial-gradient(90% 60% at 50% 110%, rgba(245,206,59,.08), transparent 60%),
+    var(--bg-0);
+  overflow-x:hidden;
+}
+
+/* ---------- intro ---------- */
+.intro{max-width:560px;text-align:center;display:flex;flex-direction:column;gap:12px}
+.eyebrow{font-size:11px;letter-spacing:2.2px;text-transform:uppercase;color:var(--green);font-weight:700}
+.intro h1{font-size:clamp(28px,4vw,38px);font-weight:800;letter-spacing:-.01em;text-wrap:balance}
+.intro p{font-size:14.5px;line-height:1.6;color:var(--ink-60);max-width:46ch;margin:0 auto}
+
+/* ---------- valores default do ponteiro ----------
+   Ficam no elemento da carta para que ela funcione parada (sem JS): tudo centrado
+   e com as camadas de luz apagadas (--card-opacity:0). O JS só sobrescreve. */
+.card,.mini-card{
+  --pointer-x:50%;
+  --pointer-y:50%;
+  --pointer-from-center:0;   /* 0 no centro -> 1 na borda; modula a força do foil */
+  --pointer-from-top:0.5;
+  --pointer-from-left:0.5;
+  --card-opacity:0;          /* opacidade das camadas de luz (some quando sai o cursor) */
+  --rotate-x:0deg;
+  --rotate-y:0deg;
+  --background-x:50%;        /* paralaxe do foil, deslocado do ponteiro */
+  --background-y:50%;
+}
+
+/* ---------- card stage ---------- */
+/* perspective menor = inclinação mais dramática (a referência usa 600px) */
+.card-wrap{perspective:600px;width:300px}
+/* camada que translada: aqui mora a flutuação, isolada da rotação */
+.card-float{
+  display:grid;transform-style:preserve-3d;will-change:transform;
+}
+@media(prefers-reduced-motion:no-preference){
+  .card-float{animation:floatCard 5s ease-in-out infinite}
+}
+@keyframes floatCard{0%,100%{transform:translate3d(0,0,0.01px)}50%{transform:translate3d(0,-6px,0.01px)}}
+/* enquanto o cursor está sobre a carta, a flutuação pausa para não brigar com o controle do mouse */
+.card-float.interacting{animation-play-state:paused}
+
+.card{
+  position:relative;width:300px;aspect-ratio:300/430;
+  border-radius:22px;
+  clip-path:polygon(9% 0,100% 0,100% 92%,91% 100%,0 100%,0 8%);
+  background:
+    linear-gradient(155deg,var(--card-2) 0%,var(--card-1) 55%,#071b12 100%);
+  box-shadow:0 30px 60px -24px rgba(0,0,0,.75),0 0 0 1px rgba(255,255,255,.06) inset;
+  transform-style:preserve-3d;
+  /* a rotação é dirigida pela mola no JS — a transition curta só suaviza o micro-serrilhado */
+  transform:rotateY(var(--rotate-x)) rotateX(var(--rotate-y));
+  will-change:transform;
+  cursor:pointer;
+}
+.card::before{
+  /* gold die-cut edge */
+  content:'';position:absolute;inset:0;border-radius:22px;
+  clip-path:polygon(9% 0,100% 0,100% 92%,91% 100%,0 100%,0 8%);
+  padding:1.5px;
+  background:linear-gradient(155deg,var(--gold-soft),var(--gold) 40%,rgba(245,206,59,.25) 70%,var(--gold) 100%);
+  -webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);
+  -webkit-mask-composite:xor;mask-composite:exclude;
+  pointer-events:none;z-index:7;
+}
+
+/* ---------- CAMADA 1 de luz: foil ----------
+   Textura holográfica com PARALAXE: a posição do fundo se desloca várias vezes mais
+   que o cursor (fatores 2.6 e 3.5), o que dá a sensação de que a textura está numa
+   camada abaixo do vidro. A intensidade cresce conforme o cursor se afasta do centro. */
+.card-foil{
+  position:absolute;inset:0;border-radius:22px;z-index:3;pointer-events:none;
+  clip-path:polygon(9% 0,100% 0,100% 92%,91% 100%,0 100%,0 8%);
+  background:repeating-linear-gradient(115deg,
+    rgba(255,255,255,0) 0 8%,
+    rgba(255,233,168,.16) 9% 11%,
+    rgba(56,217,138,.14) 12% 14%,
+    rgba(255,255,255,0) 15% 24%);
+  background-size:220% 220%;
+  background-position:
+    calc(((50% - var(--background-x)) * 2.6) + 50%)
+    calc(((50% - var(--background-y)) * 3.5) + 50%);
+  opacity:calc(.5 + var(--pointer-from-center) * .5);
+  mix-blend-mode:soft-light;
+  transform:translateZ(1px);
+}
+
+/* ---------- CAMADA 2 de luz: shine ----------
+   O brilho "holográfico" propriamente dito. O segredo está no trio
+   filter(contrast/saturate) + mix-blend-mode:color-dodge: o color-dodge estoura as
+   áreas claras do gradiente, produzindo aquele reflexo metálico que muda de cor com
+   o ângulo. As faixas usam a paleta do projeto (dourado/verde), não o arco-íris da
+   referência, para a carta continuar com a identidade do dash. */
+.card-shine{
+  position:absolute;inset:0;border-radius:22px;z-index:4;pointer-events:none;
+  clip-path:polygon(9% 0,100% 0,100% 92%,91% 100%,0 100%,0 8%);
+  --scan:2px;
+  background-image:
+    repeating-linear-gradient(110deg,
+      #3a2f0a, #1f3a2a, #46370c, #16303f, #3a2f0a,
+      #1f3a2a, #46370c, #16303f, #3a2f0a),
+    repeating-linear-gradient(90deg,
+      #000 calc(var(--scan) * 0), #000 calc(var(--scan) * 2),
+      #555 calc(var(--scan) * 2), #555 calc(var(--scan) * 4));
+  background-position:
+    calc(((50% - var(--background-x)) * 3.2) + 50%) calc(((50% - var(--background-y)) * 4) + 50%),
+    center center;
+  background-size:340% 340%, cover;
+  background-blend-mode:overlay;
+  filter:brightness(.9) contrast(2.2) saturate(1.1);
+  mix-blend-mode:color-dodge;
+  opacity:calc(var(--card-opacity) * .55);
+  transform:translateZ(1.2px);
+}
+
+/* ---------- CAMADA 3 de luz: glare ----------
+   O "vidro" por cima de tudo: uma mancha de luz radial ancorada exatamente no cursor,
+   em mix-blend-mode:overlay. É a camada que mais vende a ideia de superfície polida.
+   translateZ maior que as outras para nunca ser cortada por elas. */
+.card-glare{
+  position:absolute;inset:0;border-radius:22px;z-index:5;pointer-events:none;
+  clip-path:polygon(9% 0,100% 0,100% 92%,91% 100%,0 100%,0 8%);
+  background-image:radial-gradient(
+    farthest-corner circle at var(--pointer-x) var(--pointer-y),
+    hsla(0,0%,100%,.7) 10%,
+    hsla(0,0%,100%,.5) 20%,
+    hsla(0,0%,0%,.5) 90%);
+  opacity:var(--card-opacity);
+  mix-blend-mode:overlay;
+  transform:translateZ(1.41px);
+}
+
+.card-edge{
+  position:absolute;inset:0;border-radius:22px;z-index:6;pointer-events:none;
+  clip-path:polygon(9% 0,100% 0,100% 92%,91% 100%,0 100%,0 8%);
+  box-shadow:0 1px 0 rgba(255,255,255,.25) inset;
+}
+
+.card-inner{position:relative;z-index:2;height:100%;display:flex;flex-direction:column;transform:translateZ(28px)}
+
+.card-top{display:flex;justify-content:space-between;align-items:flex-start;padding:16px 16px 0}
+.ovr-block{display:flex;flex-direction:column;align-items:center;line-height:1;gap:3px}
+.ovr-block .ovr{font-size:38px;font-weight:800;letter-spacing:-.02em;color:var(--gold-soft);
+  text-shadow:0 2px 12px rgba(245,206,59,.35);font-stretch:condensed}
+.ovr-block .pos{font-size:12.5px;font-weight:700;letter-spacing:.5px;color:var(--ink-60)}
+.ovr-block .flag{font-size:15px;margin-top:2px}
+.crest{
+  width:42px;height:42px;display:grid;place-items:center;border-radius:11px;
+  font-size:11px;font-weight:800;letter-spacing:.4px;color:#fff;
+  background:linear-gradient(135deg,var(--c1),var(--c2));
+  box-shadow:0 8px 18px -8px rgba(0,0,0,.6),0 0 0 1px rgba(255,255,255,.12) inset;
+}
+
+.card-portrait{position:relative;flex:1;display:flex;align-items:center;justify-content:center;min-height:0;overflow:hidden}
+.portrait-watermark{
+  position:absolute;font-size:150px;font-weight:800;letter-spacing:-4px;
+  color:rgba(255,255,255,.05);user-select:none;transform:translateY(6px)
+}
+.portrait-glow{
+  position:absolute;width:150px;height:150px;border-radius:50%;
+  background:radial-gradient(circle,rgba(245,206,59,.35),transparent 70%);
+  filter:blur(10px);
+}
+.jersey-num{
+  position:relative;font-size:104px;font-weight:800;letter-spacing:-2px;color:var(--ink);
+  text-shadow:0 0 22px rgba(245,206,59,.5),0 8px 30px rgba(0,0,0,.5);
+  font-stretch:condensed;
+}
+
+.name-banner{
+  position:relative;text-align:center;padding:8px 10px 6px;
+  background:linear-gradient(180deg,rgba(245,206,59,.14),transparent);
+}
+.name-banner .name{display:block;font-size:16.5px;font-weight:800;letter-spacing:.5px;color:var(--gold-soft)}
+.name-banner .club{display:block;font-size:10.5px;color:var(--ink-40);margin-top:2px;letter-spacing:.3px}
+
+/* 6 atributos (os mesmos eixos do radar de "Perfil de Desempenho" no dash) em 3 colunas × 2
+   linhas — em uma linha só, numa carta de ~190px, cada coluna ficaria com ~31px e o rótulo
+   quebraria. Ver dash-esportivo.html: RADAR_AXES + cardStats(p). */
+.stat-grid{
+  display:grid;grid-template-columns:repeat(3,1fr);
+  padding:8px 10px 14px;gap:7px 2px;
+}
+.stat{display:flex;flex-direction:column;align-items:center;gap:2px}
+.stat .v{font-family:ui-monospace,'SF Mono',Menlo,Consolas,monospace;font-size:15px;font-weight:700;
+  font-variant-numeric:tabular-nums;color:var(--ink)}
+.stat .k{font-size:8.5px;letter-spacing:.8px;color:var(--ink-40);font-weight:700}
+
+/* ---------- caption under main card ---------- */
+.formula{max-width:300px;text-align:center;font-size:11.5px;line-height:1.55;color:var(--ink-40)}
+.formula b{color:var(--ink-60);font-weight:600}
+
+/* ---------- tier row ---------- */
+.tiers{display:flex;flex-direction:column;align-items:center;gap:22px;max-width:760px;width:100%}
+.tiers-head{text-align:center;display:flex;flex-direction:column;gap:6px}
+.tiers-head h2{font-size:19px;font-weight:800}
+.tiers-head p{font-size:12.5px;color:var(--ink-60);max-width:48ch}
+.mini-row{display:flex;gap:22px;flex-wrap:wrap;justify-content:center}
+/* as mini-cartas recebem o mesmo mecanismo, em escala menor */
+.mini-wrap{perspective:500px}
+.mini-card{
+  width:150px;aspect-ratio:150/215;border-radius:14px;position:relative;
+  clip-path:polygon(9% 0,100% 0,100% 92%,91% 100%,0 100%,0 8%);
+  display:flex;flex-direction:column;box-shadow:0 16px 32px -16px rgba(0,0,0,.7);
+  transform-style:preserve-3d;
+  transform:rotateY(var(--rotate-x)) rotateX(var(--rotate-y));
+  will-change:transform;cursor:pointer;
+}
+.mini-card::before{
+  content:'';position:absolute;inset:0;border-radius:14px;
+  clip-path:polygon(9% 0,100% 0,100% 92%,91% 100%,0 100%,0 8%);
+  padding:1.2px;
+  -webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);
+  -webkit-mask-composite:xor;mask-composite:exclude;pointer-events:none;z-index:3;
+}
+.mini-card .card-glare{border-radius:14px;clip-path:polygon(9% 0,100% 0,100% 92%,91% 100%,0 100%,0 8%);z-index:2}
+.mini-card .mtop{display:flex;justify-content:space-between;padding:9px 9px 0;position:relative;z-index:1}
+.mini-card .movr{font-size:19px;font-weight:800;line-height:1}
+.mini-card .mpos{font-size:8.5px;color:var(--ink-60);font-weight:700;margin-top:2px}
+.mini-card .mnum{flex:1;display:flex;align-items:center;justify-content:center;font-size:44px;font-weight:800;color:rgba(255,255,255,.9);position:relative;z-index:1}
+.mini-card .mname{text-align:center;font-size:10px;font-weight:800;padding:0 6px 3px;letter-spacing:.2px;position:relative;z-index:1}
+.mini-card .mclub{text-align:center;font-size:8px;color:var(--ink-40);padding:0 6px 9px;position:relative;z-index:1}
+
+.tier-gold{background:linear-gradient(155deg,var(--card-2),var(--card-1))}
+.tier-gold::before{background:linear-gradient(155deg,var(--gold-soft),var(--gold))}
+.tier-gold .movr{color:var(--gold-soft)}
+
+.tier-green{background:linear-gradient(155deg,#0a3322,#082418)}
+.tier-green::before{background:linear-gradient(155deg,#7bf0bd,var(--green))}
+.tier-green .movr{color:#8ef2c4}
+
+.tier-neutral{background:linear-gradient(155deg,var(--tier-neutral-1),var(--tier-neutral-2))}
+.tier-neutral::before{background:linear-gradient(155deg,#c9d2ce,#8b9a94)}
+.tier-neutral .movr{color:#cfd8d4}
+
+.legend{display:flex;gap:18px;flex-wrap:wrap;justify-content:center;font-size:11px;color:var(--ink-60)}
+.legend span{display:inline-flex;align-items:center;gap:6px}
+.legend i{width:9px;height:9px;border-radius:3px;display:inline-block}
+.leg-gold{background:linear-gradient(135deg,var(--gold-soft),var(--gold))}
+.leg-green{background:linear-gradient(135deg,#7bf0bd,var(--green))}
+.leg-neutral{background:linear-gradient(135deg,#c9d2ce,#8b9a94)}
+
+@media(max-width:520px){
+  .mini-row{gap:14px}
+}
+</style>
+
+<div class="intro">
+  <span class="eyebrow">Protótipo · substituindo fotos de jogador</span>
+  <h1>Carta holográfica gerada por dados</h1>
+  <p>Sem foto, sem asset externo por jogador. Número, escudo e os seis atributos vêm direto das estatísticas reais do dataset — mova o mouse sobre a carta para ver o foil reagir.</p>
+</div>
+
+<div class="card-wrap" id="cardWrap">
+  <div class="card-float">
+    <div class="card tier-gold" data-holo>
+      <div class="card-foil"></div>
+      <div class="card-shine"></div>
+      <div class="card-glare"></div>
+      <div class="card-inner">
+        <div class="card-top">
+          <div class="ovr-block">
+            <div class="ovr">85</div>
+            <div class="pos">PE</div>
+            <div class="flag">🇧🇷</div>
+          </div>
+          <div class="crest" style="--c1:#7c8aa5;--c2:#e6c04a">RM</div>
+        </div>
+        <div class="card-portrait">
+          <div class="portrait-watermark">RM</div>
+          <div class="portrait-glow"></div>
+          <div class="jersey-num">7</div>
+        </div>
+        <div class="name-banner">
+          <span class="name">VINÍCIUS JR.</span>
+          <span class="club">Real Madrid · Ponta-Esquerda</span>
+        </div>
+        <div class="stat-grid">
+          <div class="stat"><span class="v">12</span><span class="k">GOL</span></div>
+          <div class="stat"><span class="v">44%</span><span class="k">CHU</span></div>
+          <div class="stat"><span class="v">8</span><span class="k">DES</span></div>
+          <div class="stat"><span class="v">15</span><span class="k">COR</span></div>
+          <div class="stat"><span class="v">87%</span><span class="k">PAS</span></div>
+          <div class="stat"><span class="v">9</span><span class="k">ASS</span></div>
+        </div>
+      </div>
+      <div class="card-edge"></div>
+    </div>
+  </div>
+</div>
+
+<p class="formula">
+  Os 6 atributos são os mesmos eixos do radar de "Perfil de Desempenho" do dash, com o VALOR REAL
+  de cada estatística — nunca um índice normalizado. <b>GOL</b> gols · <b>CHU</b> precisão de
+  finalização · <b>DES</b> desarmes · <b>COR</b> cortes · <b>PAS</b> precisão de passe ·
+  <b>ASS</b> assistências.
+</p>
+
+<div class="tiers">
+  <div class="tiers-head">
+    <h2>A raridade da carta é a própria performance</h2>
+    <p>OVR ≥ 85 vira carta dourada, 75–84 esmeralda, abaixo disso, prata — sem curadoria manual, só o rating recalculando a cada rodada.</p>
+  </div>
+  <div class="mini-row">
+    <div class="mini-wrap">
+      <div class="mini-card tier-gold" data-holo>
+        <div class="card-glare"></div>
+        <div class="mtop"><div><div class="movr">85</div><div class="mpos">PE</div></div><span style="font-size:13px">🇧🇷</span></div>
+        <div class="mnum">7</div>
+        <div class="mname">VINÍCIUS JR.</div>
+        <div class="mclub">Real Madrid</div>
+      </div>
+    </div>
+    <div class="mini-wrap">
+      <div class="mini-card tier-green" data-holo>
+        <div class="card-glare"></div>
+        <div class="mtop"><div><div class="movr">83</div><div class="mpos">MC</div></div><span style="font-size:13px">🇧🇷</span></div>
+        <div class="mnum">23</div>
+        <div class="mname">R. VEIGA</div>
+        <div class="mclub">Palmeiras</div>
+      </div>
+    </div>
+    <div class="mini-wrap">
+      <div class="mini-card tier-neutral" data-holo>
+        <div class="card-glare"></div>
+        <div class="mtop"><div><div class="movr">74</div><div class="mpos">MC</div></div><span style="font-size:13px">🇧🇷</span></div>
+        <div class="mnum">8</div>
+        <div class="mname">É. RIBEIRO</div>
+        <div class="mclub">Bahia</div>
+      </div>
+    </div>
+  </div>
+  <div class="legend">
+    <span><i class="leg-gold"></i>Dourada · OVR 85+</span>
+    <span><i class="leg-green"></i>Esmeralda · OVR 75–84</span>
+    <span><i class="leg-neutral"></i>Prata · OVR &lt;75</span>
+  </div>
+</div>
+
+<script>
+/* ============================================================================
+   MOVIMENTO 3D + ILUMINAÇÃO DINÂMICA
+   Adaptado de github.com/simeydotme/pokemon-cards-css (MIT).
+
+   Para integrar no dash: chamar holoCard(elementoDaCarta) para cada carta.
+   A função não conhece nada do conteúdo — só escreve variáveis CSS no elemento,
+   então serve para a carta grande e para as reduzidas da comparação.
+   ============================================================================ */
+
+const round = (v, p = 3) => parseFloat(v.toFixed(p));
+const clamp = (v, min = 0, max = 100) => Math.min(Math.max(v, min), max);
+/* remapeia um valor de uma faixa para outra: adjust(10, 0,100, 100,0) === 90 */
+const adjust = (v, fromMin, fromMax, toMin, toMax) =>
+  round(toMin + (toMax - toMin) * (v - fromMin) / (fromMax - fromMin));
+
+/* --------------------------------------------------------------------------
+   MOLA (spring)
+   O ponteiro não move a carta diretamente: ele define um ALVO, e a cada quadro
+   o valor atual persegue esse alvo com aceleração e atrito. É daí que vem a
+   inércia — a carta continua "assentando" um instante depois que o mouse parou,
+   coisa que nenhuma `transition` de CSS reproduz.
+
+     aceleração = rigidez × (alvo − atual) − amortecimento × velocidade
+
+   rigidez alta   -> persegue o alvo mais rápido
+   amortecimento  -> freia a oscilação (baixo demais = a carta balança sem parar)
+   -------------------------------------------------------------------------- */
+function makeSpring(initial, settings, onFrame){
+  const keys = Object.keys(initial);
+  const value = { ...initial };
+  const target = { ...initial };
+  const vel = {};
+  keys.forEach(k => vel[k] = 0);
+  let cfg = { ...settings };
+  let raf = null;
+
+  function frame(){
+    let moving = false;
+    for (const k of keys){
+      const delta = target[k] - value[k];
+      vel[k] += cfg.stiffness * delta - cfg.damping * vel[k];
+      value[k] += vel[k];
+      if (Math.abs(delta) > 0.01 || Math.abs(vel[k]) > 0.01) moving = true;
+    }
+    onFrame(value);
+    raf = moving ? requestAnimationFrame(frame) : null;
+  }
+
+  return {
+    set(next, nextCfg){
+      if (nextCfg) cfg = { ...nextCfg };
+      Object.assign(target, next);
+      if (raf === null) raf = requestAnimationFrame(frame);
+    }
+  };
+}
+
+/* durante a interação: mola firme, acompanha o cursor de perto */
+const SPRING_INTERACT = { stiffness: 0.066, damping: 0.25 };
+/* ao sair: mola frouxa, a carta "relaxa" devagar de volta ao centro */
+const SPRING_SNAP     = { stiffness: 0.01,  damping: 0.06 };
+/* quanto o cursor espera antes de a carta começar a voltar (ms) */
+const SNAP_DELAY = 500;
+
+function holoCard(card){
+  if (!card) return;
+  const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (reduceMotion) return;                     // sem movimento: a carta fica estática
+
+  const float = card.closest('.card-float');    // opcional (só a carta grande tem)
+  let snapTimer = null;
+
+  /* Uma mola só, com todos os canais juntos, para que rotação, brilho e paralaxe
+     cheguem sempre no mesmo quadro — se fossem molas separadas, o brilho poderia
+     "descolar" da inclinação em quadros perdidos. */
+  const spring = makeSpring(
+    { rx: 0, ry: 0, gx: 50, gy: 50, o: 0, bx: 50, by: 50 },
+    SPRING_INTERACT,
+    (v) => {
+      /* distância do ponteiro até o centro, normalizada 0..1 — usada para
+         intensificar o foil conforme o cursor se afasta do meio da carta */
+      const fromCenter = clamp(
+        Math.sqrt((v.gy - 50) * (v.gy - 50) + (v.gx - 50) * (v.gx - 50)) / 50, 0, 1);
+
+      card.style.setProperty('--pointer-x', `${round(v.gx)}%`);
+      card.style.setProperty('--pointer-y', `${round(v.gy)}%`);
+      card.style.setProperty('--pointer-from-center', round(fromCenter));
+      card.style.setProperty('--pointer-from-top', round(v.gy / 100));
+      card.style.setProperty('--pointer-from-left', round(v.gx / 100));
+      /* a mola frouxa do retorno passa do ponto e faria `o` ficar negativo por alguns
+         quadros; `opacity` sozinha toleraria (o navegador limita a 0), mas esta variável
+         também é lida por quem integra a carta noutro lugar — limitar aqui evita surpresa */
+      card.style.setProperty('--card-opacity', clamp(round(v.o), 0, 1));
+      /* nomes herdados da referência: --rotate-x alimenta rotateY e vice-versa */
+      card.style.setProperty('--rotate-x', `${round(v.rx)}deg`);
+      card.style.setProperty('--rotate-y', `${round(v.ry)}deg`);
+      card.style.setProperty('--background-x', `${round(v.bx)}%`);
+      card.style.setProperty('--background-y', `${round(v.by)}%`);
+    }
+  );
+
+  function interact(e){
+    clearTimeout(snapTimer);
+    float?.classList.add('interacting');
+
+    const point = e.touches ? e.touches[0] : e;
+    const rect = card.getBoundingClientRect();
+    /* posição do cursor dentro da carta, em % (0..100) */
+    const percent = {
+      x: clamp(round((100 / rect.width)  * (point.clientX - rect.left))),
+      y: clamp(round((100 / rect.height) * (point.clientY - rect.top)))
+    };
+    /* mesma posição medida a partir do centro (−50..+50) */
+    const center = { x: percent.x - 50, y: percent.y - 50 };
+
+    spring.set({
+      /* dividir por 3.5 limita a inclinação a ~±14°: o suficiente para dar volume
+         sem que o texto da carta fique ilegível na borda */
+      rx: round(-(center.x / 3.5)),
+      ry: round(center.y / 3.5),
+      gx: percent.x,          // glare acompanha o cursor exatamente
+      gy: percent.y,
+      o: 1,                   // acende as camadas de luz
+      /* o foil percorre uma faixa estreita (37–63%) enquanto o cursor varre 0–100%:
+         é o que faz a textura parecer distante, atrás do "vidro" da carta */
+      bx: adjust(percent.x, 0, 100, 37, 63),
+      by: adjust(percent.y, 0, 100, 33, 67)
+    }, SPRING_INTERACT);
+  }
+
+  function interactEnd(){
+    clearTimeout(snapTimer);
+    snapTimer = setTimeout(() => {
+      float?.classList.remove('interacting');
+      /* volta ao repouso com a mola frouxa: o retorno é lento e com um leve
+         balanço, em vez de "cair" de uma vez no lugar */
+      spring.set({ rx: 0, ry: 0, gx: 50, gy: 50, o: 0, bx: 50, by: 50 }, SPRING_SNAP);
+    }, SNAP_DELAY);
+  }
+
+  card.addEventListener('pointermove', interact);
+  card.addEventListener('pointerleave', interactEnd);
+  card.addEventListener('touchmove', interact, { passive: true });
+  card.addEventListener('touchend', interactEnd);
+  card.addEventListener('touchcancel', interactEnd);
+}
+
+document.querySelectorAll('[data-holo]').forEach(holoCard);
+</script>

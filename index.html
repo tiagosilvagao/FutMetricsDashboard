@@ -1,0 +1,2421 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fut Metrics</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Sora:wght@600;700&display=swap" rel="stylesheet">
+<style>
+/* MAPA DO ARQUIVO — atualizar ao adicionar/remover seções grandes
+   1-898      CSS (tokens, base, layout, topbar, avatar, ranking, sidebar, responsivo)
+   901-996    HTML (estrutura da página)
+   998-1133    dados embutidos: CLUB_COLORS, PLAYERS, MARKET_HISTORY — não ler à toa (Regra 1)
+   1135-fim    JS: configuração, helpers, dados derivados, render, eventos
+*/
+
+/* ===== TOKENS ===== */
+:root{
+  --bg:#08130d;
+  --glass:rgba(14,32,22,.42);
+  --glass-2:rgba(9,24,16,.55);
+  --stroke:rgba(255,255,255,.14);
+  --stroke-2:rgba(255,255,255,.08);
+  --ink:#ffffff;
+  --ink-60:rgba(255,255,255,.62);
+  --ink-40:rgba(255,255,255,.40);
+  --gold:#F5CE3B;
+  --gold-soft:#FFDE6B;
+  --green:#38D98A;
+  --red:#FF6B6B;
+  --orange:#ffa24d;
+  --blue:#4FA3FF;
+
+  /* derivados (mesmas cores da paleta, só com alfa) */
+  --gold-a12:rgba(245,206,59,.12);
+  --gold-a25:rgba(245,206,59,.25);
+  --gold-a40:rgba(245,206,59,.40);
+  --green-a14:rgba(56,217,138,.14);
+  --red-a14:rgba(255,107,107,.14);
+  --orange-a14:rgba(255,162,77,.14);
+  --blue-a14:rgba(79,163,255,.14);
+  --blue-a25:rgba(79,163,255,.25);
+  --blue-a40:rgba(79,163,255,.40);
+  --white-a03:rgba(255,255,255,.03);
+  --white-a06:rgba(255,255,255,.06);
+  --bg-a20:rgba(8,19,13,.20);
+  --bg-a35:rgba(8,19,13,.35);
+  --bg-a55:rgba(8,19,13,.55);
+  --bg-a75:rgba(8,19,13,.75);
+  --grad-gold:linear-gradient(135deg,var(--gold-soft),var(--gold));
+
+  --fs-display:38px;
+  --fs-title:24px;
+  --fs-body:13px;
+  --fs-label:10px;
+
+  --space:15px;
+  --radius:20px;
+  --radius-md:13px;
+  --radius-sm:10px;
+  --radius-pill:999px;
+  --shadow:0 20px 50px -22px rgba(0,0,0,.75);
+
+  --font-display:'Sora','Inter',system-ui,sans-serif;
+  --font-body:'Inter','Segoe UI',system-ui,-apple-system,Roboto,Helvetica,Arial,sans-serif;
+  --font-num:ui-monospace,'SF Mono',Menlo,Consolas,monospace;
+}
+
+/* ===== BASE ===== */
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  background:
+    radial-gradient(60% 45% at 38% -5%, var(--gold-a12), transparent 70%),
+    radial-gradient(50% 50% at 100% 100%, var(--green-a14), transparent 70%),
+    var(--bg);
+  color:var(--ink);
+  font-family:var(--font-body);
+  font-size:var(--fs-body);
+  line-height:1.4;
+  -webkit-font-smoothing:antialiased;
+  overflow:hidden;
+}
+/* fundo: vídeo do estádio à noite + véu escuro para manter a leitura */
+.bg-video{position:fixed;inset:0;z-index:0;width:100%;height:100%;object-fit:cover;object-position:50% 70%;pointer-events:none}
+.bg-scrim{position:fixed;inset:0;z-index:0;pointer-events:none;
+  background:
+    radial-gradient(38% 55% at 50% 55%, var(--bg-a35), transparent 75%),
+    linear-gradient(180deg, var(--bg-a35) 0%, var(--bg-a20) 45%, var(--bg-a55) 100%);
+}
+[hidden]{display:none !important}
+button{font:inherit;color:inherit;background:none;border:0;cursor:pointer;text-align:left}
+.num{font-family:var(--font-num);font-variant-numeric:tabular-nums}
+.label{font-size:var(--fs-label);text-transform:uppercase;letter-spacing:.12em;color:var(--ink-40);font-weight:600}
+.muted{color:var(--ink-60)}
+.panel{
+  background:var(--glass);
+  -webkit-backdrop-filter:blur(20px) saturate(1.25);
+  backdrop-filter:blur(20px) saturate(1.25);
+  border:1px solid var(--stroke);
+  border-radius:var(--radius);
+  box-shadow:var(--shadow);
+}
+.scroll{overflow-y:auto;scrollbar-width:thin;scrollbar-color:var(--stroke) transparent}
+.scroll::-webkit-scrollbar{width:6px}
+.scroll::-webkit-scrollbar-thumb{background:var(--stroke);border-radius:var(--radius-pill)}
+
+/* ===== LAYOUT ===== */
+.app{
+  position:relative;z-index:1;
+  height:100vh;
+  display:grid;
+  grid-template-columns:370px minmax(0,1fr) 370px;
+  grid-template-rows:auto minmax(0,1fr);
+  grid-template-areas:"top top top" "left field side";
+  gap:var(--space);
+  padding:var(--space);
+}
+.topbar{grid-area:top}
+.field{grid-area:field}
+.side-l{grid-area:left}
+.side-r{grid-area:side}
+
+/* ===== TOPBAR ===== */
+.topbar{position:relative;z-index:20;display:flex;flex-wrap:wrap;align-items:center;gap:10px var(--space);padding:12px var(--space)}
+.brand{display:flex;align-items:center;gap:10px;flex-shrink:0}
+.brand-mark{
+  width:34px;height:34px;border-radius:10px;
+  background:var(--grad-gold);
+  display:grid;place-items:center;
+  box-shadow:0 6px 18px -6px var(--gold-a40);
+}
+.brand-mark svg{width:20px;height:20px;stroke:var(--bg);fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.brand-name{font-family:var(--font-display);font-weight:700;font-size:15px;letter-spacing:-.01em}
+.search{
+  flex:1 1 260px;max-width:380px;
+  display:flex;align-items:center;gap:10px;
+  height:40px;padding:0 14px;
+  border-radius:13px;background:var(--glass-2);border:1px solid var(--stroke-2);
+  transition:border-color .2s;
+}
+.search:focus-within{border-color:var(--gold-a40)}
+.search svg{width:16px;height:16px;flex-shrink:0;stroke:var(--ink-40);fill:none;stroke-width:2;stroke-linecap:round}
+.search input{flex:1;min-width:0;height:100%;background:none;border:0;outline:0;color:var(--ink);font:inherit;font-size:var(--fs-body)}
+.search input::placeholder{color:var(--ink-40)}
+.search input::-webkit-search-cancel-button{-webkit-appearance:none;appearance:none}
+.season{flex-shrink:0;display:flex;align-items:center;gap:8px;margin-left:auto}
+.chip{
+  display:inline-flex;align-items:center;gap:6px;
+  padding:4px 10px;border-radius:var(--radius-pill);
+  background:var(--glass-2);border:1px solid var(--stroke-2);
+  font-size:var(--fs-label);text-transform:uppercase;letter-spacing:.1em;font-weight:600;color:var(--ink-60);
+}
+.chip.gold{color:var(--gold);border-color:var(--gold-a25);background:var(--gold-a12)}
+.chip.up{color:var(--green);border-color:transparent;background:var(--green-a14)}
+.chip.down{color:var(--red);border-color:transparent;background:var(--red-a14)}
+.chip.warn{color:var(--orange);border-color:transparent;background:var(--orange-a14)}
+
+/* ===== AVATAR (componente reutilizado) ===== */
+.avatar{
+  --size:36px;
+  width:var(--size);height:var(--size);flex-shrink:0;
+  position:relative;overflow:hidden;
+  border-radius:50%;
+  background:linear-gradient(135deg,var(--c1),var(--c2));
+  display:grid;place-items:center;
+  font-family:var(--font-display);font-weight:700;font-size:var(--fs-body);
+  letter-spacing:.02em;color:var(--ink);
+  text-shadow:0 1px 2px rgba(0,0,0,.45);
+  border:1px solid var(--stroke);
+}
+.avatar.sm{--size:34px}
+.avatar.md{--size:56px;font-size:var(--fs-title)}
+.avatar.lg{--size:76px;font-size:var(--fs-title)}
+
+/* imagens com fallback: a sigla (.ini) fica por baixo até a foto/brasão carregar;
+   se o arquivo não existir, a <img> é removida e a sigla continua (ver JS: imagens) */
+.ph{position:absolute;opacity:0;transition:opacity .25s;pointer-events:none}
+.ph-ok > .ph{opacity:1}
+.ph-ok > .ini{visibility:hidden}
+.avatar .ph{inset:2px;width:calc(100% - 4px);height:calc(100% - 4px);border-radius:50%;object-fit:cover;object-position:50% 20%}
+
+/* brasão do clube (componente reutilizado: ficha + carta) */
+.crest{
+  --size:34px;position:relative;flex-shrink:0;width:var(--size);height:var(--size);
+  display:grid;place-items:center;border-radius:var(--radius-sm);
+  background:linear-gradient(135deg,var(--c1),var(--c2));border:1px solid var(--stroke);
+  font-family:var(--font-display);font-weight:700;font-size:var(--fs-label);color:var(--ink);
+}
+.crest.ph-ok{background:none;border-color:transparent}
+.crest .ph{inset:0;width:100%;height:100%;object-fit:contain;filter:drop-shadow(0 2px 6px rgba(0,0,0,.55))}
+
+/* ===== FIELD / RANKING ===== */
+.field{position:relative;display:flex;justify-content:center;align-items:stretch;gap:calc(var(--space) * 2);min-width:0;min-height:0}
+/* projeção: luz difusa saindo de baixo, como se ranking e carta fossem projetados sobre o fundo */
+.field::before{
+  content:"";position:absolute;left:8%;right:8%;bottom:-30px;height:55%;pointer-events:none;
+  background:radial-gradient(50% 60% at 50% 100%, var(--gold-a12), transparent 70%),
+             radial-gradient(70% 80% at 50% 100%, var(--green-a14), transparent 75%);
+  filter:blur(14px);
+}
+.rank{position:relative;flex:0 1 240px;min-width:0;display:flex;flex-direction:column}
+/* versão compacta do ranking (largura 40% menor) */
+.rank .field-head{flex-wrap:wrap;gap:6px 10px}
+.rank .stage{padding:10px 0 0;gap:6px}
+.rank .podium{gap:6px}
+.rank .podium .avatar.md{--size:44px;font-size:var(--fs-body)}
+.rank .podium .avatar.lg{--size:60px}
+.rank .podium.p1 .name{font-size:var(--fs-body)}
+.rank .podium .rating{font-size:var(--fs-title)}
+.rank .podium.p1 .rating{font-size:var(--fs-display)}
+.rank .plinth{padding-top:6px;font-size:var(--fs-body)}
+.rank .p1 .plinth{height:72px;font-size:var(--fs-title)}
+.rank .p2 .plinth{height:50px}
+.rank .p3 .plinth{height:34px}
+.rank .board-head,.rank .row{grid-template-columns:22px 30px minmax(0,1fr) auto;gap:10px;padding-left:6px;padding-right:6px}
+.rank .row .avatar.sm{--size:30px}
+.rank .row .bar{display:none}
+.rank::after{ /* linhas de varredura bem sutis do "holograma" */
+  content:"";position:absolute;inset:0;pointer-events:none;opacity:.55;mix-blend-mode:overlay;
+  background:repeating-linear-gradient(180deg, var(--white-a06) 0 1px, transparent 1px 4px);
+}
+.rank h1,.rank .name,.rank .rating,.rank .value{text-shadow:0 0 18px var(--gold-a25),0 2px 10px rgba(0,0,0,.6)}
+.field-head{display:flex;align-items:center;justify-content:space-between;gap:var(--space);padding:var(--space) 0 0}
+.field-head .chip{white-space:nowrap;flex-shrink:0}
+.field-head h1{font-size:var(--fs-title);font-weight:700;letter-spacing:-.02em;margin-top:2px}
+
+/* pódio */
+.stage{
+  position:relative;flex-shrink:0;
+  display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.3fr) minmax(0,1fr);align-items:end;
+  gap:10px;padding:var(--space) var(--space) 0;
+  max-width:720px;width:100%;margin:0 auto;
+}
+.podium{position:relative;display:flex;flex-direction:column;align-items:center;gap:8px;min-width:0;border-radius:var(--radius-md);transition:transform .2s}
+.podium:hover{transform:translateY(-3px)}
+.podium .who{display:flex;flex-direction:column;align-items:center;gap:2px;min-width:0;max-width:100%;text-align:center}
+.podium .name{font-weight:600;font-size:var(--fs-body);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+.podium .rating{font-family:var(--font-num);font-variant-numeric:tabular-nums;font-weight:700;font-size:var(--fs-title);line-height:1.1}
+.podium .avatar{box-shadow:var(--shadow)}
+.podium.p1 .avatar{border:2px solid var(--gold);box-shadow:0 0 0 5px var(--gold-a12),0 14px 34px -10px var(--gold-a40)}
+.podium.p1 .rating{font-size:var(--fs-display);color:var(--gold)}
+.podium.p1 .name{font-size:var(--fs-title);font-weight:700;letter-spacing:-.02em;line-height:1.1;white-space:normal;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+.plinth{
+  width:100%;border-radius:var(--radius-md) var(--radius-md) 0 0;
+  display:flex;justify-content:center;padding-top:10px;
+  font-family:var(--font-display);font-weight:700;font-size:var(--fs-title);color:var(--ink-40);
+}
+.p1 .plinth{height:110px;font-size:var(--fs-display);color:var(--gold)}
+.p2 .plinth{height:76px}
+.p3 .plinth{height:54px}
+.podium.p2{order:1}.podium.p1{order:2}.podium.p3{order:3}
+.podium.selected .plinth,.podium.selected .name{color:var(--gold)}
+.podium .crown{width:22px;height:22px;stroke:var(--gold);fill:none;stroke-width:1.8;stroke-linejoin:round;margin-bottom:-4px}
+
+/* lista */
+.board{flex:1;min-height:0;display:flex;flex-direction:column}
+.board-head{display:grid;grid-template-columns:32px 34px minmax(0,1fr) auto;gap:var(--space);padding:10px calc(var(--space) * .9);border-top:1px solid var(--stroke);border-bottom:1px solid var(--stroke-2)}
+.board-head .label:last-child{text-align:right}
+.list{flex:1;min-height:0;padding:8px 0 var(--space);-webkit-mask-image:linear-gradient(180deg,transparent,black 14px,black calc(100% - 40px),transparent);mask-image:linear-gradient(180deg,transparent,black 14px,black calc(100% - 40px),transparent)}
+.row{
+  width:100%;display:grid;grid-template-columns:32px 34px minmax(0,1fr) auto;align-items:center;gap:var(--space);
+  padding:8px calc(var(--space) * .9 );border-radius:var(--radius-md);
+  border:1px solid transparent;transition:background .15s,border-color .15s;
+}
+.row + .row{margin-top:2px}
+.row:hover{background:var(--white-a03)}
+.row:focus-visible,.podium:focus-visible{outline:2px solid var(--gold-a40);outline-offset:2px}
+.row.selected{background:var(--gold-a12);border-color:var(--gold-a25)}
+.row .pos{font-family:var(--font-num);font-variant-numeric:tabular-nums;color:var(--ink-40);font-weight:600;text-align:center}
+.row.selected .pos{color:var(--gold)}
+.row .who{min-width:0;display:flex;flex-direction:column;gap:1px}
+.row .name{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.row .meta{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.row .value{font-family:var(--font-num);font-variant-numeric:tabular-nums;font-weight:700;display:flex;align-items:center;gap:10px}
+.bar{width:70px;height:4px;border-radius:var(--radius-pill);background:var(--stroke-2);overflow:hidden}
+.bar i{display:block;height:100%;border-radius:inherit;background:var(--grad-gold)}
+.empty{padding:calc(var(--space) * 2);text-align:center;color:var(--ink-60)}
+
+/* ===== SIDEBAR ===== */
+.side{display:flex;flex-direction:column;gap:var(--space);min-height:0;padding-right:2px}
+.card{padding:var(--space) calc(var(--space) + 3px)}
+.side .card{display:flex;flex-direction:column;min-height:0;flex:0 1 auto}
+.side .card.fixed{flex:0 0 auto}
+.side .card.fill{flex:1 1 0;min-height:240px}
+.card-body{min-height:0;overflow-y:auto;margin-right:-10px;padding-right:10px}
+.card-head{flex-shrink:0;display:flex;align-items:center;justify-content:space-between;margin-bottom:var(--space)}
+.section{border-top:1px solid var(--stroke-2);padding-top:var(--space);margin-top:var(--space)}
+.section > .label{display:block;margin-bottom:10px}
+
+/* ficha */
+.id{display:flex;align-items:center;gap:var(--space)}
+.id-name{font-size:var(--fs-title);font-weight:700;letter-spacing:-.02em;line-height:1.15}
+.id-sub{margin-top:3px}
+.phys{display:flex;flex-wrap:wrap;gap:4px 12px;margin-top:8px;color:var(--ink-40)}
+.id .id-sub{margin-top:6px}
+.phys b{font-family:var(--font-num);font-variant-numeric:tabular-nums;font-weight:600;color:var(--ink-60);margin-right:2px}
+.metric{display:flex;flex-direction:column;gap:4px;padding:10px 12px;border-radius:var(--radius-md);background:var(--glass-2);border:1px solid var(--stroke-2);min-width:0}
+.metric .v{font-family:var(--font-num);font-variant-numeric:tabular-nums;font-weight:700;font-size:var(--fs-title);line-height:1.1;white-space:nowrap}
+.metric .v small{font-size:var(--fs-label);color:var(--ink-40);font-weight:600;margin-left:3px;font-family:var(--font-body)}
+.metric.hl .v{color:var(--gold)}
+.club{display:flex;align-items:center;gap:12px;margin-top:12px;padding:8px 10px;border-radius:var(--radius-md);background:var(--glass-2);border:1px solid var(--stroke-2)}
+.club .who{flex:1;min-width:0}
+.club .name{font-weight:600}
+.market{margin-top:12px;padding:12px 12px 6px;border-radius:var(--radius-md);background:var(--glass-2);border:1px solid var(--stroke-2)}
+.market > .label{display:block;margin-bottom:6px}
+.market-top{display:flex;align-items:flex-end;justify-content:space-between;gap:var(--space)}
+.market-value{font-family:var(--font-num);font-variant-numeric:tabular-nums;font-weight:700;font-size:var(--fs-display);color:var(--gold);line-height:1}
+.market-value small{font-size:var(--fs-body);color:var(--ink-60);margin-left:4px;font-weight:600}
+.market-delta{display:flex;flex-direction:column;align-items:flex-end;gap:4px}
+
+/* gráfico de linha com eixos (valor de mercado) */
+.chart{display:block;width:100%;height:auto;margin-top:10px;overflow:visible}
+.chart .gridline{stroke:var(--stroke-2);stroke-width:1}
+.chart .axisline{stroke:var(--stroke);stroke-width:1}
+.chart .line{fill:none;stroke:var(--gold);stroke-width:2.2;stroke-linejoin:round;stroke-linecap:round}
+.chart .area{fill:url(#mvFill)}
+.chart .stop-a{stop-color:var(--gold);stop-opacity:.26}
+.chart .stop-b{stop-color:var(--gold);stop-opacity:0}
+.chart .mark{fill:var(--bg);stroke:var(--gold);stroke-width:2}
+.chart .mark.last{fill:var(--gold);stroke:var(--bg)}
+.chart .tick{font-family:var(--font-display);font-size:var(--fs-label);font-weight:600;fill:var(--ink-40)}
+.chart .ytick{font-family:var(--font-num);font-size:var(--fs-label);fill:var(--ink-40)}
+.chart .val{font-family:var(--font-num);font-size:var(--fs-label);font-weight:600;fill:var(--ink-60)}
+.chart .val.last{fill:var(--gold)}
+.chart .atitle{font-size:var(--fs-label);font-weight:600;letter-spacing:.12em;text-transform:uppercase;fill:var(--ink-40)}
+
+/* desempenho */
+.hero{display:flex;align-items:center;gap:var(--space);padding:12px 14px;border-radius:var(--radius-md);background:linear-gradient(135deg,var(--gold-a12),transparent 70%);border:1px solid var(--gold-a25)}
+.hero-value{font-family:var(--font-num);font-variant-numeric:tabular-nums;font-weight:700;font-size:var(--fs-display);line-height:1;color:var(--gold)}
+.hero-info{flex:1;display:flex;flex-direction:column;gap:6px;min-width:0}
+.hero-info .bar{width:100%;height:5px}
+.hero-foot{display:flex;justify-content:space-between}
+.grid-3{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.grid-2{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}
+.metric .bar{width:100%;margin-top:2px}
+
+/* radar de atributos */
+.radar{display:block;width:100%;height:auto;overflow:visible}
+.radar .ring{fill:none;stroke:var(--stroke-2);stroke-width:1}
+.radar .ring.outer{stroke:var(--stroke)}
+.radar .spoke{stroke:var(--stroke-2);stroke-width:1}
+.radar .shape{fill:var(--gold-a25);stroke:var(--gold);stroke-width:2;stroke-linejoin:round}
+.radar .vtx{fill:var(--gold);stroke:var(--bg);stroke-width:1.5}
+.radar .rl{font-size:var(--fs-label);font-weight:600;letter-spacing:.1em;text-transform:uppercase;fill:var(--ink-40)}
+.radar .rv{font-family:var(--font-num);font-size:var(--fs-body);font-weight:700;fill:var(--ink)}
+.radar .rv.top{fill:var(--gold)}
+.caption{display:block;text-align:center;margin-top:4px}
+
+/* medidor de precisão (vermelho → amarelo → verde) */
+.pair{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.3fr);gap:10px}
+.stack{display:flex;flex-direction:column;gap:10px;min-width:0}
+.stack .metric{flex:1;justify-content:center}
+.gauge{display:flex;flex-direction:column;align-items:center;gap:2px;padding:10px 12px;border-radius:var(--radius-md);background:var(--glass-2);border:1px solid var(--stroke);min-width:0}
+.gauge > .label{align-self:flex-start}
+.gauge svg{display:block;width:100%;max-width:170px;height:auto}
+.gauge .seg{fill:none;stroke-width:10;opacity:.22}
+.gauge .arc{fill:none;stroke-width:10;stroke-linecap:round}
+.gauge .needle{stroke:var(--ink);stroke-width:2;stroke-linecap:round}
+.gauge .hub{fill:var(--ink)}
+.gauge .gv{font-family:var(--font-num);font-size:var(--fs-title);font-weight:700}
+.gauge .gv-u{font-size:var(--fs-label);fill:var(--ink-40)}
+.gauge .gt{font-family:var(--font-num);font-size:var(--fs-label);fill:var(--ink-40)}
+.lv-low{stroke:var(--red);fill:var(--red)}
+.lv-mid{stroke:var(--gold);fill:var(--gold)}
+.lv-high{stroke:var(--green);fill:var(--green)}
+.gauge .seg.lv-low,.gauge .seg.lv-mid,.gauge .seg.lv-high,.gauge .arc{fill:none}
+.gauge .gv.lv-low,.gauge .gv.lv-mid,.gauge .gv.lv-high{stroke:none}
+
+/* mapa de presença */
+.heat-legend{display:flex;align-items:center;gap:10px;margin-top:10px}
+.heat-scale{flex:1;height:5px;border-radius:var(--radius-pill);background:linear-gradient(90deg,var(--blue),var(--green),var(--gold),var(--red))}
+.note{margin-top:10px}
+.note b{color:var(--ink);font-weight:600}
+
+/* cobranças de pênalti */
+.legend{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.goal-wrap{margin-top:var(--space)}
+.chips{display:flex;gap:6px}
+.dot-i{width:7px;height:7px;border-radius:var(--radius-pill);background:currentColor}
+
+
+/* ===== CARTA HOLOGRÁFICA =====
+   Adaptada de elementos/carta_holografica.html — mecanismo (mola + 3 camadas de luz) de
+   github.com/simeydotme/pokemon-cards-css (MIT). Tamanhos em cqw: a carta escala inteira
+   pela largura de .holo-wrap. Cores: clube (--c1/--c2) + raridade (tier) + matiz própria (--hue). */
+.holo-col{flex:0 0 220px;align-self:center;position:relative;z-index:2}
+.holo-swap{will-change:transform}
+.holo-wrap{perspective:440px;width:220px;container-type:inline-size}
+.holo-float{display:grid;transform-style:preserve-3d;will-change:transform}
+@media (prefers-reduced-motion:no-preference){ .holo-float{animation:holo-bob 5s ease-in-out infinite} }
+@keyframes holo-bob{0%,100%{transform:translate3d(0,0,.01px)}50%{transform:translate3d(0,-6px,.01px)}}
+.holo-float.interacting{animation-play-state:paused}
+.holo-card{
+  --pointer-x:50%;--pointer-y:50%;--pointer-from-center:0;--pointer-from-top:.5;--pointer-from-left:.5;
+  --card-opacity:0;--rotate-x:0deg;--rotate-y:0deg;--background-x:50%;--background-y:50%;--hue:0deg;
+  --cut:polygon(9% 0,100% 0,100% 92%,91% 100%,0 100%,0 8%);
+  --r:7.3cqw;
+  --edge-a:var(--gold-soft);--edge-b:var(--gold);--title:var(--gold-soft);
+  position:relative;width:100%;aspect-ratio:300/430;border-radius:var(--r);clip-path:var(--cut);
+  background:
+    radial-gradient(120% 65% at 15% 0%, color-mix(in srgb,var(--c1) 55%,transparent), transparent 62%),
+    radial-gradient(90% 60% at 100% 100%, color-mix(in srgb,var(--c2) 40%,transparent), transparent 65%),
+    linear-gradient(155deg, color-mix(in srgb,var(--c1) 30%,var(--bg)) 0%, color-mix(in srgb,var(--c2) 22%,var(--bg)) 60%, var(--bg) 100%);
+  transform-style:preserve-3d;transform:rotateY(var(--rotate-x)) rotateX(var(--rotate-y));
+  will-change:transform;cursor:pointer;
+}
+.holo-card.tier-emerald{--edge-a:color-mix(in srgb,var(--green) 55%,var(--ink));--edge-b:var(--green);--title:color-mix(in srgb,var(--green) 60%,var(--ink))}
+.holo-card.tier-silver{--edge-a:var(--ink);--edge-b:var(--ink-40);--title:var(--ink)}
+.holo-card::before{ /* borda recortada (die-cut) na cor da raridade */
+  content:"";position:absolute;inset:0;border-radius:var(--r);clip-path:var(--cut);padding:1.5px;
+  background:linear-gradient(155deg,var(--edge-a),var(--edge-b) 40%,color-mix(in srgb,var(--edge-b) 25%,transparent) 70%,var(--edge-b) 100%);
+  -webkit-mask:linear-gradient(black 0 0) content-box,linear-gradient(black 0 0);
+  -webkit-mask-composite:xor;mask-composite:exclude;pointer-events:none;z-index:7;
+}
+.holo-foil,.holo-shine,.holo-glare,.holo-edge{position:absolute;inset:0;border-radius:var(--r);clip-path:var(--cut);pointer-events:none}
+/* camada 1 — foil com paralaxe */
+.holo-foil{
+  z-index:3;
+  background:repeating-linear-gradient(115deg,
+    transparent 0 8%, color-mix(in srgb,var(--gold-soft) 16%,transparent) 9% 11%,
+    var(--green-a14) 12% 14%, transparent 15% 24%);
+  background-size:220% 220%;
+  background-position:calc(((50% - var(--background-x)) * 2.6) + 50%) calc(((50% - var(--background-y)) * 3.5) + 50%);
+  opacity:calc(.5 + var(--pointer-from-center) * .5);
+  mix-blend-mode:soft-light;filter:hue-rotate(var(--hue));transform:translateZ(1px);
+}
+/* camada 2 — shine: faixas nas cores do clube + matiz própria do jogador, estouradas por color-dodge */
+.holo-shine{
+  z-index:4;--scan:2px;
+  background-image:
+    repeating-linear-gradient(110deg,
+      color-mix(in srgb,var(--c1) 35%,black), color-mix(in srgb,var(--edge-b) 22%,black),
+      color-mix(in srgb,var(--c2) 35%,black), color-mix(in srgb,var(--blue) 22%,black),
+      color-mix(in srgb,var(--c1) 35%,black), color-mix(in srgb,var(--edge-b) 22%,black),
+      color-mix(in srgb,var(--c2) 35%,black), color-mix(in srgb,var(--blue) 22%,black),
+      color-mix(in srgb,var(--c1) 35%,black)),
+    repeating-linear-gradient(90deg, black 0, black calc(var(--scan) * 2),
+      color-mix(in srgb,var(--ink) 33%,black) calc(var(--scan) * 2), color-mix(in srgb,var(--ink) 33%,black) calc(var(--scan) * 4));
+  background-position:calc(((50% - var(--background-x)) * 3.2) + 50%) calc(((50% - var(--background-y)) * 4) + 50%), center;
+  background-size:340% 340%, cover;background-blend-mode:overlay;
+  filter:brightness(.9) contrast(2.2) saturate(1.2) hue-rotate(var(--hue));
+  mix-blend-mode:color-dodge;opacity:calc(var(--card-opacity) * .55);transform:translateZ(1.2px);
+}
+/* camada 3 — glare no ponteiro */
+.holo-glare{
+  z-index:5;
+  background-image:radial-gradient(farthest-corner circle at var(--pointer-x) var(--pointer-y),
+    rgba(255,255,255,.7) 10%, rgba(255,255,255,.5) 20%, rgba(0,0,0,.5) 90%);
+  opacity:var(--card-opacity);mix-blend-mode:overlay;transform:translateZ(1.41px);
+}
+.holo-edge{z-index:6;box-shadow:0 1px 0 var(--stroke) inset}
+.holo-inner{position:relative;z-index:2;height:100%;display:flex;flex-direction:column;transform:translateZ(20px)}
+.holo-top{position:relative;z-index:3;display:flex;justify-content:space-between;align-items:flex-start;padding:5.3cqw 5.3cqw 0}
+.holo-ovr{display:flex;flex-direction:column;align-items:center;line-height:1;gap:1cqw}
+.holo-ovr .ovr{font-family:var(--font-display);font-size:12.6cqw;font-weight:700;letter-spacing:-.02em;color:var(--title);text-shadow:0 2px 12px var(--gold-a40)}
+.holo-ovr .pos{font-size:4.6cqw;font-weight:700;letter-spacing:.05em;color:var(--ink-60)}
+.holo-ovr .flag{font-size:5cqw;margin-top:.7cqw}
+.holo-crest{
+  position:relative;
+  width:14cqw;height:14cqw;display:grid;place-items:center;border-radius:3.7cqw;
+  font-family:var(--font-display);font-size:3.7cqw;font-weight:700;color:var(--ink);
+  background:linear-gradient(135deg,var(--c1),var(--c2));
+  box-shadow:0 8px 18px -8px rgba(0,0,0,.6),0 0 0 1px var(--stroke) inset;
+}
+.holo-portrait{position:relative;flex:1;display:flex;align-items:center;justify-content:center;min-height:0;overflow:visible}
+.holo-crest.ph-ok{background:none;box-shadow:none}
+.holo-crest .ph{inset:0;width:100%;height:100%;object-fit:contain;filter:drop-shadow(0 4px 8px rgba(0,0,0,.6))}
+.holo-watermark{position:absolute;inset:6% 10%;display:grid;place-items:center;font-family:var(--font-display);font-size:46cqw;font-weight:700;letter-spacing:-.04em;color:var(--white-a06);user-select:none}
+.holo-watermark .ph{inset:0;width:100%;height:100%;object-fit:contain;filter:grayscale(1) brightness(2)}
+.holo-watermark.ph-ok > .ph{opacity:.07}
+.holo-photo{position:absolute;inset:-46% -24% -2%;display:grid;place-items:center}   /* foto invade o topo: o jogador é o destaque da carta */
+.holo-photo .ph{inset:0;width:100%;height:100%;object-fit:contain;object-position:50% 100%;filter:drop-shadow(0 10px 18px rgba(0,0,0,.55))}
+.holo-glow{position:absolute;width:72cqw;height:72cqw;border-radius:50%;background:radial-gradient(circle,color-mix(in srgb,var(--edge-b) 40%,transparent),transparent 70%);filter:blur(10px)}
+.holo-initials{position:relative;font-family:var(--font-display);font-size:30cqw;font-weight:700;letter-spacing:-.03em;color:var(--ink);
+  text-shadow:0 0 22px color-mix(in srgb,var(--edge-b) 55%,transparent),0 8px 30px rgba(0,0,0,.5)}
+.holo-banner{position:relative;text-align:center;padding:2.7cqw 3.3cqw 2cqw;background:linear-gradient(180deg,color-mix(in srgb,var(--edge-b) 16%,transparent),transparent)}
+.holo-banner .nm{display:block;font-size:5.5cqw;font-weight:700;letter-spacing:.03em;color:var(--title);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.holo-banner .cl{display:block;font-size:4cqw;color:var(--ink-40);margin-top:.7cqw}
+.holo-stats{display:grid;grid-template-columns:repeat(3,1fr);padding:2.7cqw 3.3cqw 4.7cqw;gap:2.3cqw .7cqw}
+.holo-stat{display:flex;flex-direction:column;align-items:center;gap:.7cqw}
+.holo-stat .v{font-family:var(--font-num);font-size:5cqw;font-weight:700;font-variant-numeric:tabular-nums;color:var(--ink)}
+.holo-stat .k{font-size:3.6cqw;letter-spacing:.1em;color:var(--ink-40);font-weight:700}
+.holo-tier{display:block;text-align:center;margin-top:10px}
+.holo-shadow{width:70%;height:16px;margin:8px auto 0;border-radius:50%;background:radial-gradient(closest-side,rgba(0,0,0,.6),transparent);filter:blur(4px)}
+
+/* ===== CAMPO 3D (elementos/campo3d_card.html) ===== */
+/* ===========================================================================
+   CAMPO 3D — bloco de terra flutuante com heatmap na superfície.
+   100% CSS: nenhuma imagem, nenhum canvas, nenhuma dependência.
+
+   Esqueleto gerado por campo3D() (ver comentário no JS):
+     .campo3d              caixa do componente — define --w, o ângulo e o tamanho projetado
+       .c3-sombra          elipse borrada no "chão", fora da cena 3D (efeito de flutuar)
+       .c3-flutua          wrapper do bob suave (anima transform sem brigar com a rotação)
+         .c3-cena          preserve-3d: rotateX (inclinação) + rotateZ (giro no plano)
+           .c3-topo        face de cima — gramado > calor > marcações > sombra das goleiras
+             .c3-pista     recorte do campo marcado (o gramado sobra --m além das linhas)
+           .c3-lado.s/.o   as duas paredes de terra visíveis nesse ângulo
+           .c3-gol.n/.s    goleiras: planos verticais em pé sobre a linha de fundo
+       .c3-poeira          grãos de terra caindo da borda quebrada (fora da cena 3D)
+
+   Só as 2 paredes visíveis existem — as outras 2 nunca aparecem e não são criadas
+   (menos DOM e zero risco de z-fighting entre faces).
+
+   LUZ: uma única direção em todo o componente — vem do alto-esquerda. Daí saem o
+   degradê do gramado, a parede sul mais escura (é a que dá as costas pra luz) e o
+   ângulo em que a sombra das goleiras cai no gramado (pra baixo e pra direita).
+   ============================================================================= */
+.campo3d{
+  --w:150px;                                  /* única medida a mexer: largura do campo marcado */
+  --h:calc(var(--w)*1.545);                   /* proporção oficial 68 x 105 m */
+  --m:calc(var(--w)*0.085);                   /* sobra de gramado além das linhas */
+  --bw:calc(var(--w) + var(--m)*2);           /* o bloco é o campo + a sobra dos dois lados */
+  --bh:calc(var(--h) + var(--m)*2);
+  --d:calc(var(--w)*0.0575);                  /* espessura da camada de terra */
+  /* a goleira oficial (7,32 x 2,44 m = 10,8% x 3,6% da largura do campo) some num
+     card desse tamanho: --gol-esc é o exagero proporcional aplicado às duas medidas
+     de uma vez, então ela cresce sem deformar (segue 3:1, como a de verdade) */
+  --gol-esc:1.85;
+  --wgol:calc(var(--w)*0.108*var(--gol-esc));
+  --hgol:calc(var(--w)*0.036*var(--gol-esc));
+  --faixa:calc(var(--w)/8);                   /* largura de uma faixa do corte de grama */
+  --rz:26deg;                                 /* giro no plano (ângulo do campo na tela) */
+  --rx:58deg;                                 /* inclinação (0 = visto de cima, 90 = de lado) */
+  --lw:max(1px, calc(var(--w)*0.0085));       /* espessura das linhas de marcação */
+  --linha:rgba(255,255,255,.66);
+  --borrao:calc(var(--w)*0.052);              /* raio do blur que funde as células de calor */
+  position:relative; margin-inline:auto;
+  /* tamanho projetado na tela, deduzido do próprio ângulo — o card não precisa
+     adivinhar altura: mudar --rz/--rx/--w reajusta a caixa sozinho */
+  width:calc(var(--bw)*cos(var(--rz)) + var(--bh)*sin(var(--rz)));
+  height:calc((var(--bw)*sin(var(--rz)) + var(--bh)*cos(var(--rz)))*cos(var(--rx))
+              + var(--d)*sin(var(--rx)) + var(--hgol)*sin(var(--rx))
+              + var(--w)*0.11);               /* folga embaixo pra poeira cair sem vazar do card */
+  perspective:calc(var(--w)*7); perspective-origin:50% 40%;
+}
+.c3-sombra{ position:absolute; left:50%; top:58%; width:76%; height:46%;
+  transform:translate(-50%,-50%); border-radius:50%; filter:blur(calc(var(--w)*0.06));
+  background:radial-gradient(ellipse at 50% 50%, rgba(0,0,0,.62), rgba(0,0,0,.30) 46%, transparent 72%); }
+.c3-flutua{ position:absolute; left:50%; top:50%; width:var(--bw); height:var(--bh);
+  transform-style:preserve-3d;
+  /* recentraliza: sobe metade da extrusão (que só cresce para baixo na tela) mais
+     metade da folga da poeira, pra toda essa folga sobrar embaixo do bloco */
+  --sobe:calc(var(--d)*sin(var(--rx))*-0.5 - var(--w)*0.055);
+  transform:translate(-50%,-50%) translateY(var(--sobe));
+  animation:c3-bob 7.5s ease-in-out infinite; }
+@keyframes c3-bob{ 50%{ transform:translate(-50%,-50%) translateY(calc(var(--sobe) - 5px)) } }
+@media (prefers-reduced-motion:reduce){ .c3-flutua{ animation:none } }
+.c3-cena{ position:absolute; inset:0; transform-style:preserve-3d;
+  transform:rotateX(var(--rx)) rotateZ(calc(-1*var(--rz))); }
+
+/* --- face de cima: gramado -------------------------------------------------
+   sete camadas, de cima pra baixo: (1) luz do alto-esquerda + vinheta, (2) fios
+   em diagonal, alternando um claro e um escuro, (3+4) tufos claros e escuros em
+   duas malhas de tamanhos diferentes — é o que tira o aspecto de cor chapada,
+   (5) a costura entre faixas, (6) o relevo do rolo do cortador (cada faixa com um
+   lado iluminado e outro na sombra) e (7) as faixas do corte propriamente ditas. */
+.c3-topo{ position:absolute; inset:0; overflow:hidden; border-radius:calc(var(--w)*0.02);
+  background:
+    linear-gradient(115deg, rgba(255,255,255,.11), rgba(255,255,255,0) 42%, rgba(0,0,0,.24)),
+    repeating-linear-gradient(99deg, rgba(255,255,255,.06) 0 1px, rgba(0,0,0,.055) 1px 2.2px, transparent 2.2px 4.5px),
+    repeating-radial-gradient(circle at 30% 35%, rgba(255,255,255,.055) 0 1.1px, transparent 1.9px),
+    repeating-radial-gradient(circle at 68% 66%, rgba(0,0,0,.14) 0 1.2px, transparent 2.1px),
+    repeating-linear-gradient(90deg, rgba(0,0,0,.20) 0 1px, transparent 1px var(--faixa)),
+    repeating-linear-gradient(90deg, rgba(255,255,255,.075) 0, rgba(255,255,255,0) calc(var(--faixa)*.55),
+      rgba(0,0,0,.10) var(--faixa), rgba(0,0,0,0) calc(var(--faixa)*1.55),
+      rgba(255,255,255,.075) calc(var(--faixa)*2)),
+    repeating-linear-gradient(90deg, #26603a 0 var(--faixa), #1f5330 var(--faixa) calc(var(--faixa)*2));
+  background-size:auto, auto, 9px 7px, 13px 11px, auto, auto, auto;
+  box-shadow:inset 0 0 calc(var(--w)*0.12) rgba(0,0,0,.35); }
+
+/* --- nuvem de calor ---------------------------------------------------------
+   mesma escala do heatmap 2D (azul->verde->amarelo->vermelho) e mesma curva de
+   opacidade: some abaixo de ~10% de presença, então o contorno da nuvem fica
+   orgânico em vez de um retângulo pintado. O blur no container é o que funde as
+   células num gradiente contínuo — e como filter achata o 3D, ele precisa ficar
+   AQUI DENTRO da face (que já é plana), nunca no .c3-cena.
+   .c3-pista existe pra que as porcentagens do JS sejam relativas ao campo
+   MARCADO, e não ao bloco inteiro — o JS não sabe que existe sobra de gramado. */
+.c3-pista{ position:absolute; inset:var(--m) }
+.c3-calor{ position:absolute; inset:0; filter:blur(var(--borrao)); }
+.c3-calor i{ position:absolute; display:block }
+.c3-brilho{ position:absolute; width:34%; aspect-ratio:1; border-radius:50%;
+  transform:translate(-50%,-50%); mix-blend-mode:screen; filter:blur(calc(var(--w)*0.09)); }
+.c3-topo.trocando .c3-calor,.c3-topo.trocando .c3-brilho{ animation:c3-entra .45s ease both }
+@keyframes c3-entra{ from{ opacity:0 } to{ opacity:1 } }
+
+/* --- marcações do campo (medidas oficiais em % do campo) ------------------- */
+.c3-linhas{ position:absolute; inset:var(--m); overflow:hidden }
+.c3-linhas i{ position:absolute; border:var(--lw) solid var(--linha) }
+.c3-linhas .borda{ inset:0 }
+.c3-linhas .meio{ left:0; right:0; top:50%; border-width:var(--lw) 0 0 }
+.c3-linhas .circulo{ left:50%; top:50%; width:26.9%; aspect-ratio:1; border-radius:50%;
+  transform:translate(-50%,-50%) }
+.c3-linhas .area{ left:20.35%; width:59.3%; height:15.7% }
+.c3-linhas .pequena{ left:36.55%; width:26.9%; height:5.24% }
+.c3-linhas .n{ top:0 } .c3-linhas .s{ bottom:0 }
+.c3-linhas .canto{ width:4%; aspect-ratio:1; border-radius:50% }      /* vira arco: .c3-linhas corta */
+.c3-linhas .canto.no{ left:-2%; top:-2%} .c3-linhas .canto.ne{ right:-2%; top:-2%}
+.c3-linhas .canto.so{ left:-2%; bottom:-2%} .c3-linhas .canto.se{ right:-2%; bottom:-2%}
+.c3-linhas .ponto{ width:1.7%; aspect-ratio:1; border:0; border-radius:50%; background:var(--linha);
+  left:50%; transform:translate(-50%,-50%) }
+.c3-linhas .ponto.centro{ top:50% } .c3-linhas .ponto.pn{ top:10.5% } .c3-linhas .ponto.ps{ top:89.5% }
+
+/* --- goleiras --------------------------------------------------------------
+   um plano vertical em pé sobre cada linha de fundo: a aresta de baixo fica
+   colada na linha (transform-origin embaixo) e o rotateX(-90deg) levanta o resto
+   pra fora do gramado (+Z). Tamanho em --wgol/--hgol (ver --gol-esc lá em cima).
+   Borda = travessão e postes; o xadrez por dentro = a rede. */
+.c3-gol{ position:absolute; left:calc(var(--m) + var(--w)*0.5 - var(--wgol)*0.5); width:var(--wgol);
+  height:var(--hgol); transform-origin:0 100%; transform:rotateX(-90deg);
+  border:var(--lw) solid rgba(255,255,255,.88); border-bottom:0;
+  background:
+    repeating-linear-gradient(90deg, rgba(255,255,255,.32) 0 .7px, transparent .7px 3.2px),
+    repeating-linear-gradient(0deg,  rgba(255,255,255,.24) 0 .7px, transparent .7px 3.2px),
+    rgba(255,255,255,.05); }
+.c3-gol.n{ top:calc(var(--m) - var(--hgol)) }
+.c3-gol.s{ top:calc(var(--m) + var(--h) - var(--hgol)) }
+
+/* sombra das goleiras no gramado: o retângulo da baliza deitado no chão e
+   cisalhado — skewX empurra a base pro lado à medida que ela se afasta, que é
+   exatamente o que uma luz alta vinda do alto-esquerda faria. Fica DEPOIS das
+   marcações e em multiply, então escurece também a linha de fundo por baixo. */
+.c3-sombra-gol{ position:absolute; left:calc(var(--m) + var(--w)*0.5 - var(--wgol)*0.5); width:var(--wgol);
+  height:calc(var(--hgol)*1.33); transform-origin:0 0; transform:skewX(34deg);
+  mix-blend-mode:multiply; filter:blur(.7px);
+  background:linear-gradient(180deg, rgba(0,0,0,.52), rgba(0,0,0,.44) 35%, rgba(0,0,0,.10)); }
+.c3-sombra-gol.n{ top:var(--m) }
+.c3-sombra-gol.s{ top:calc(var(--m) + var(--h)) }
+
+/* --- paredes de terra -------------------------------------------------------
+   geometria: cada parede nasce colada numa aresta do topo (transform-origin na
+   aresta) e tomba 90° para dentro da profundidade (-Z). A textura é um degradê
+   de solo + duas camadas de grãos em radial-gradient (pedrisco claro e escuro).
+   A faixa de grama viva no topo vem em px, e não em %, pra continuar legível por
+   mais fina que a camada de terra fique.
+
+   ATENÇÃO ao eixo: as duas paredes têm a profundidade em eixos LOCAIS diferentes.
+   Na sul, a profundidade é o eixo y do elemento (altura = --d); na oeste, é o
+   eixo x (largura = --d), porque ela tomba com rotateY. Por isso o degradê do
+   solo é orientado por --ang, e não fixo em 180deg — senão a parede oeste sairia
+   com a grama numa ponta e o subsolo na outra, ao longo do comprimento do campo.
+
+   A borda de baixo é recortada com clip-path num perfil irregular, como se o
+   bloco tivesse sido arrancado do chão — nunca passa de ~38% da espessura, então
+   continua lendo como uma quebra do torrão e não como um serrilhado decorativo. */
+.c3-lado{ position:absolute; --ang:180deg; background:
+    repeating-radial-gradient(circle at 21% 34%, rgba(255,255,255,.09) 0 1px, transparent 1.7px),
+    repeating-radial-gradient(circle at 68% 71%, rgba(0,0,0,.34) 0 1.3px, transparent 2.2px),
+    linear-gradient(var(--ang),
+      #3f7f4b 0 1.6px, #2c5b35 1.6px 2.8px, #6d4c2c 2.8px 40%,
+      #57391f 40% 62%, #3d2716 62% 82%, #2a1a0e 82% 100%);
+  background-size:8px 7px, 11px 6px, auto; }
+.c3-lado.s{ left:0; top:100%; width:var(--bw); height:var(--d);
+  transform-origin:0 0; transform:rotateX(-90deg); filter:brightness(.78);   /* de costas pra luz */
+  clip-path:polygon(0 0, 100% 0, 100% 78%, 96.5% 96%, 93% 70%, 89% 90%, 85.5% 66%, 82% 94%,
+    78% 74%, 74.5% 88%, 71% 64%, 67% 92%, 63.5% 72%, 60% 96%, 56% 68%, 52.5% 86%, 49% 62%,
+    45% 90%, 41.5% 74%, 38% 94%, 34% 66%, 30.5% 88%, 27% 70%, 23% 96%, 19.5% 72%, 16% 84%,
+    12% 64%, 8.5% 92%, 5% 70%, 0 86%); }
+.c3-lado.o{ left:0; top:0; width:var(--d); height:var(--bh); --ang:90deg;
+  transform-origin:0 0; transform:rotateY(90deg);
+  clip-path:polygon(0 0, 84% 0, 66% 3.5%, 92% 7%, 70% 10.5%, 96% 14%, 64% 17.5%, 88% 21%,
+    72% 24.5%, 94% 28%, 62% 31.5%, 90% 35%, 68% 38.5%, 86% 42%, 74% 45.5%, 98% 49%, 66% 52.5%,
+    92% 56%, 70% 59.5%, 84% 63%, 60% 66.5%, 94% 70%, 72% 73.5%, 88% 77%, 64% 80.5%, 96% 84%,
+    68% 87.5%, 90% 91%, 74% 94.5%, 86% 100%, 0 100%); }
+
+/* --- partículas de terra caindo --------------------------------------------
+   ficam FORA da cena 3D, na frente de tudo: são grãos soltos, não precisam de
+   perspectiva, e assim não entram na ordenação de planos do preserve-3d. As
+   posições de origem acompanham à mão a silhueta inferior do bloco (um "V" com o
+   vértice no canto mais próximo) — se --rz/--rx mudarem muito, é aqui que se
+   reencosta a poeira na borda. */
+.c3-poeira{ position:absolute; inset:0; pointer-events:none }
+.c3-poeira i{ position:absolute; width:2px; height:2px; border-radius:50%; opacity:0;
+  background:#5d4127; animation:c3-cai 3.4s linear infinite }
+@keyframes c3-cai{
+  0%  { opacity:0;   transform:translate(0,-3px) scale(1) }
+  14% { opacity:.9 }
+  65% { opacity:.45 }
+  100%{ opacity:0;   transform:translate(3px,15px) scale(.55) }
+}
+.c3-poeira i:nth-child(1){ left:8%;  top:36%; animation-delay:-.2s; animation-duration:3.1s }
+.c3-poeira i:nth-child(2){ left:15%; top:49%; animation-delay:-1.7s; width:1.5px; height:1.5px }
+.c3-poeira i:nth-child(3){ left:23%; top:63%; animation-delay:-.9s; animation-duration:4.1s }
+.c3-poeira i:nth-child(4){ left:31%; top:78%; animation-delay:-2.6s; width:2.5px; height:2.5px }
+.c3-poeira i:nth-child(5){ left:42%; top:94%; animation-delay:-.5s; animation-duration:3.7s }
+.c3-poeira i:nth-child(6){ left:53%; top:90%; animation-delay:-2.1s; width:1.5px; height:1.5px }
+.c3-poeira i:nth-child(7){ left:64%; top:85%; animation-delay:-1.2s; animation-duration:4.4s }
+.c3-poeira i:nth-child(8){ left:76%; top:80%; animation-delay:-3.0s; width:2.5px; height:2.5px }
+.c3-poeira i:nth-child(9){ left:88%; top:76%; animation-delay:-1.5s; animation-duration:3.3s }
+@media (prefers-reduced-motion:reduce){ .c3-poeira{ display:none } }
+
+.c3-calor-svg{position:absolute;inset:0;display:block;width:100%;height:100%}
+/* encaixe no card: ocupa exatamente o espaço do antigo heatmap 2D (334 x 216) */
+.campo-slot{position:relative;width:100%;aspect-ratio:334/216;container-type:size;display:grid;place-items:center}
+.campo-slot .campo3d{--w:min(calc(100cqw / 1.81), calc(100cqh / 1.31))}
+.campo-slot .dir{position:absolute;top:2px;right:2px}
+
+/* ===== GOLEIRA 3D (elementos/goleira_card.html) ===== */
+.goleira-box{position:relative;height:141px}
+canvas.goleira{display:block;width:100%;height:100%}
+.goal-overlay{position:absolute;inset:0;width:100%;height:100%;overflow:visible;pointer-events:none}
+.goal-overlay .zone{fill:none;stroke:var(--ink-40);stroke-width:1;stroke-dasharray:3 4}
+.goal-overlay .zcount{font-family:var(--font-num);font-size:var(--fs-label);fill:var(--ink);font-weight:700;paint-order:stroke;stroke:var(--bg);stroke-width:3}
+.goal-overlay .shot{stroke:var(--bg);stroke-width:2;pointer-events:auto}
+.goal-overlay .shot.gol{fill:var(--green)}
+.goal-overlay .shot.def{fill:var(--red)}
+.goal-overlay .shot.fora{fill:var(--orange)}
+.goal-overlay .empty-txt{font-size:var(--fs-body);fill:var(--ink);font-family:var(--font-body);paint-order:stroke;stroke:var(--bg);stroke-width:4}
+.goal-overlay .side-txt{font-family:var(--font-display);font-size:var(--fs-label);font-weight:600;fill:var(--ink-60);letter-spacing:.1em;paint-order:stroke;stroke:var(--bg);stroke-width:3}
+
+
+/* ===== FILTROS (barra superior) ===== */
+.filters{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-left:auto}   /* Posição, Clubes e Comparar alinhados à direita */
+.app.comparing #cmp-btn{margin-left:auto}
+.fbtn{
+  display:inline-flex;align-items:center;gap:8px;height:40px;padding:0 14px;
+  border-radius:var(--radius-md);background:var(--glass-2);border:1px solid var(--stroke-2);
+  color:var(--ink-60);font-size:var(--fs-body);font-weight:500;white-space:nowrap;
+  transition:background .18s,border-color .18s,color .18s;
+}
+.fbtn:hover{color:var(--ink);border-color:var(--stroke)}
+.fbtn:focus-visible{outline:2px solid var(--gold-a40);outline-offset:2px}
+.fbtn[aria-pressed="true"],.fbtn.on{color:var(--gold);background:var(--gold-a12);border-color:var(--gold-a25)}
+.fbtn svg{width:12px;height:12px;stroke:currentColor;fill:none;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round;transition:transform .2s}
+.fbtn[aria-expanded="true"] svg{transform:rotate(180deg)}
+.fcount{min-width:18px;height:18px;padding:0 5px;border-radius:var(--radius-pill);display:inline-grid;place-items:center;
+  background:var(--gold);color:var(--bg);font-size:var(--fs-label);font-weight:700;font-family:var(--font-num)}
+.fclear{height:28px;padding:0 10px;border-radius:var(--radius-pill);color:var(--ink-60);font-size:var(--fs-label);font-weight:600;
+  letter-spacing:.1em;text-transform:uppercase;border:1px solid var(--stroke-2);transition:color .18s,border-color .18s}
+.fclear:hover{color:var(--ink);border-color:var(--stroke)}
+.fclear:focus-visible{outline:2px solid var(--gold-a40);outline-offset:2px}
+
+/* lista suspensa de clubes: fora da barra (position:fixed) para o desfoque enxergar o vídeo atrás */
+.dropdown{
+  position:fixed;z-index:60;max-height:min(440px,calc(100vh - 110px));
+  display:flex;flex-direction:column;gap:8px;padding:10px;
+  background:var(--bg-a55);
+  -webkit-backdrop-filter:blur(22px) saturate(1.3);backdrop-filter:blur(22px) saturate(1.3);
+  border:1px solid var(--stroke);border-radius:var(--radius);box-shadow:var(--shadow);
+}
+@media (prefers-reduced-motion:no-preference){ .dropdown:not([hidden]){animation:dd-in .18s ease-out} }
+@keyframes dd-in{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:none}}
+.dd-head{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:2px 4px 0}
+.dd-foot{display:flex;align-items:center;justify-content:space-between;gap:10px;padding-top:10px;border-top:1px solid var(--stroke-2)}
+.apply{
+  flex:1;height:36px;padding:0 16px;border-radius:var(--radius-md);text-align:center;
+  background:var(--grad-gold);color:var(--bg);font-size:var(--fs-body);font-weight:700;
+  box-shadow:0 8px 20px -10px var(--gold-a40);transition:filter .18s,transform .18s;
+}
+.apply:hover{filter:brightness(1.08)}
+.apply:active{transform:translateY(1px)}
+.apply:focus-visible{outline:2px solid var(--gold-a40);outline-offset:2px}
+.dd-item.plain{grid-template-columns:18px minmax(0,1fr) auto}
+.dd-list{min-height:0;display:flex;flex-direction:column;gap:2px;padding-right:2px}
+.dd-item{
+  width:100%;display:grid;grid-template-columns:18px 26px minmax(0,1fr) auto;align-items:center;gap:10px;
+  padding:7px 10px;border-radius:var(--radius-md);border:1px solid transparent;transition:background .15s,border-color .15s;
+}
+.dd-item:hover{background:var(--white-a06)}
+.dd-item:focus-visible{outline:2px solid var(--gold-a40);outline-offset:-2px}
+.dd-item[aria-checked="true"]{background:var(--gold-a12);border-color:var(--gold-a25)}
+.dd-item .nm{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dd-item .n{font-family:var(--font-num);font-variant-numeric:tabular-nums;color:var(--ink-40)}
+.dd-item .crest{--size:26px}
+/* caixa quadrada = seleção múltipla (checkbox); círculo fica reservado para seleção única (radio) */
+.check{width:18px;height:18px;border-radius:5px;border:1px solid var(--stroke);display:grid;place-items:center}
+.check svg{width:10px;height:10px;stroke:var(--bg);fill:none;stroke-width:3;stroke-linecap:round;stroke-linejoin:round;opacity:0}
+.dd-item[aria-checked="true"] .check{background:var(--gold);border-color:var(--gold)}
+.dd-item[aria-checked="true"] .check svg{opacity:1}
+
+/* ===== MÉTRICAS CLICÁVEIS (ordenam o ranking) ===== */
+[data-metric]{cursor:pointer;transition:background .18s,border-color .18s,box-shadow .18s,color .18s}
+[data-metric]:focus-visible{outline:2px solid var(--gold-a40);outline-offset:2px}
+.metric[data-metric]:hover,.gauge[data-metric]:hover,.hero[data-metric]:hover,.chip[data-metric]:hover,
+.phys [data-metric]:hover,.market-value[data-metric]:hover{
+  background:var(--gold-a12);border-color:var(--gold-a25);box-shadow:0 10px 24px -16px var(--gold-a40);
+}
+.metric[data-metric].active,.gauge[data-metric].active,.chip[data-metric].active,
+.phys [data-metric].active,.market-value[data-metric].active{background:var(--gold-a12);border-color:var(--gold-a40)}
+.hero[data-metric].active{border-color:var(--gold-a40)}
+.metric[data-metric].active .v{color:var(--gold)}
+.phys [data-metric]{padding:2px 6px;margin:-3px -6px;border:1px solid transparent;border-radius:var(--radius-sm)}
+.phys [data-metric]:hover b,.phys [data-metric].active b{color:var(--gold)}
+.market-value[data-metric]{display:inline-block;padding:4px 8px;margin:-5px -9px;border:1px solid transparent;border-radius:var(--radius-sm)}
+.gauge[data-metric]:hover{border-color:var(--gold-a40)}
+/* rótulos do radar (SVG) */
+.radar .rg text{pointer-events:none;transition:fill .18s}
+.radar .hit{fill:transparent;stroke:transparent;transition:fill .18s,stroke .18s}
+.radar .rg:hover .hit{fill:var(--gold-a12);stroke:var(--gold-a25)}
+.radar .rg.active .hit{fill:var(--gold-a12);stroke:var(--gold-a40)}
+.radar .rg:hover .rl,.radar .rg.active .rl{fill:var(--gold)}
+.radar .rg:focus-visible{outline:none}
+.radar .rg:focus-visible .hit{stroke:var(--gold-a40)}
+
+/* ranking: valores longos no pódio + reordenação */
+.rank .podium .rating.long{font-size:var(--fs-body)}
+.rank .podium.p1 .rating.long{font-size:var(--fs-title)}
+.podium.p1{grid-column:2}.podium.p2{grid-column:1}.podium.p3{grid-column:3}
+.sortchip{cursor:pointer}
+.sortchip:hover{border-color:var(--gold-a40)}
+.sortchip:focus-visible{outline:2px solid var(--gold-a40);outline-offset:2px}
+@media (prefers-reduced-motion:no-preference){ .reorder > *{animation:rk-in .38s cubic-bezier(.16,1,.3,1) both} }
+@keyframes rk-in{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+
+/* ===== COMPARAÇÃO ENTRE JOGADORES =====
+   Jogador A = dourado (jogador atual), jogador B = azul (rival escolhido na lista). */
+.app.picking .rank [data-id]{cursor:pointer}
+.app.picking .rank [data-id]:not(.selected):hover{background:var(--gold-a12);border-color:var(--gold-a40)}
+.app.comparing{grid-template-areas:"top top top" "cmp cmp cmp"}
+.app.comparing .field,.app.comparing .side,.app.comparing .search,.app.comparing .filters{display:none}
+.compare{grid-area:cmp;position:relative;z-index:2;display:flex;justify-content:center;align-items:center;gap:calc(var(--space) * 2);min-width:0;min-height:0}
+.cmp-panel{flex:0 1 640px;min-width:0;align-self:stretch;display:flex;flex-direction:column;min-height:0}
+.cmp-panel .radar{max-width:440px;margin:0 auto}
+.cmp-vs{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);align-items:center;gap:var(--space);padding:12px 14px;border-radius:var(--radius-md);background:var(--glass-2);border:1px solid var(--stroke-2)}
+.cmp-id{display:flex;flex-direction:column;gap:2px;min-width:0}
+.cmp-id.a{align-items:flex-start;text-align:left}
+.cmp-id.b{align-items:flex-end;text-align:right}
+.cmp-id .nm{max-width:100%;font-family:var(--font-display);font-weight:700;font-size:var(--fs-title);line-height:1.1;letter-spacing:-.02em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cmp-id.a .nm{color:var(--gold)}
+.cmp-id.b .nm{color:var(--blue)}
+.cmp-score{display:flex;flex-direction:column;align-items:center;gap:2px}
+.cmp-score .sc{display:flex;align-items:baseline;gap:8px;font-family:var(--font-num);font-variant-numeric:tabular-nums;font-weight:700;font-size:var(--fs-display);line-height:1}
+.cmp-score .sc .a{color:var(--gold)}
+.cmp-score .sc .b{color:var(--blue)}
+.cmp-score .sc .x{font-size:var(--fs-title);color:var(--ink-40)}
+.radar .shape.b{fill:var(--blue-a25);stroke:var(--blue)}
+.radar .vtx.b{fill:var(--blue)}
+.radar .rv .a{fill:var(--gold)}
+.radar .rv .b{fill:var(--blue)}
+.radar .rv .sep{fill:var(--ink-40)}
+.radar .rv .lose{opacity:.5}
+.radar .rv .win{font-weight:800}
+.cmp-row{display:grid;grid-template-columns:minmax(0,1fr) 132px minmax(0,1fr);align-items:center;gap:12px;padding:8px 0}
+.cmp-row + .cmp-row{border-top:1px solid var(--stroke-2)}
+.cmp-k{text-align:center}
+.cmp-side{display:flex;flex-direction:column;gap:5px;min-width:0}
+.cmp-side.a{align-items:flex-end}
+.cmp-side.b{align-items:flex-start}
+.cmp-side .bar{width:100%;height:5px}
+.cmp-side.a .bar{display:flex;justify-content:flex-end}
+.cmp-side.b .bar i{background:var(--blue)}
+.cmp-side.lose .bar i{opacity:.45}
+.cmp-v{display:inline-flex;align-items:center;gap:6px;font-family:var(--font-num);font-variant-numeric:tabular-nums;font-weight:700;font-size:var(--fs-title);line-height:1.1;color:var(--ink-60)}
+.cmp-side.a.win .cmp-v{color:var(--gold)}
+.cmp-side.b.win .cmp-v{color:var(--blue)}
+.cmp-mark{font-style:normal;font-size:var(--fs-label)}
+@media (max-width:1280px){
+  .app.comparing{grid-template-areas:"top top" "cmp cmp"}
+  .compare{flex-wrap:wrap;align-content:flex-start;gap:var(--space)}
+  .cmp-panel{order:3;flex:1 1 100%;align-self:auto}
+}
+@media (max-width:760px){
+  .app.comparing{grid-template-areas:"top" "cmp"}
+  .cmp-row{grid-template-columns:minmax(0,1fr) 88px minmax(0,1fr)}
+  .cmp-v,.cmp-id .nm{font-size:var(--fs-body)}
+}
+
+/* ===== AJUSTES: perfil compacto, tooltip do gráfico, transições ===== */
+.trio{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr) minmax(0,1.1fr);gap:8px}
+.trio .metric{padding:8px 10px;justify-content:center}
+.trio .gauge{padding:6px 8px;gap:0}
+.trio .gauge svg{max-width:118px}
+.trio .gauge .gt{display:none}
+#performance .radar{max-width:300px;margin:0 auto}
+.chart .hit{fill:transparent;cursor:pointer}
+.chart .mark.hover{fill:var(--gold);r:5.5px}
+.chart .mv-tip{opacity:0;pointer-events:none;transition:opacity .15s}
+.chart .mv-tip.on{opacity:1}
+.chart .tip-bg{fill:var(--bg-a75);stroke:var(--gold-a40);stroke-width:1}
+.chart .tip-p{font-size:var(--fs-label);font-weight:600;letter-spacing:.08em;text-transform:uppercase;fill:var(--ink-60)}
+.chart .tip-v{font-family:var(--font-num);font-size:var(--fs-body);font-weight:700;fill:var(--gold)}
+body.sliding{overflow:hidden}
+
+/* ===== RESPONSIVO ===== */
+@media (max-width:1280px){
+  body{overflow:auto}
+  .app{height:auto;grid-template-columns:repeat(2,minmax(0,1fr));grid-template-areas:"top top" "field field" "left side"}
+  .field{height:85vh}
+}
+@media (max-width:760px){
+  .app{grid-template-columns:minmax(0,1fr);grid-template-areas:"top" "field" "left" "side"}
+  .field{flex-direction:column;align-items:center;height:auto}
+  .rank{flex:none;width:100%;height:80vh}
+  .season{display:none}
+}
+@media (max-width:560px){
+  .topbar{flex-wrap:wrap}
+  .search{flex:1 1 100%;max-width:none;order:3}
+  .filters{order:4;width:100%}
+  .stage{padding:var(--space) var(--space) 0;gap:10px}
+  .podium.p1 .name{font-size:var(--fs-body)}
+  .bar{display:none}
+  .hero-info .bar,.metric .bar{display:block}
+}
+</style>
+</head>
+<body>
+<!-- ===== HTML ===== -->
+<!-- fundo: o nome do arquivo tem acento; duas grafias Unicode (NFD, como está gravado no macOS, e NFC) -->
+<video class="bg-video" id="bg-video" autoplay muted loop playsinline preload="auto" aria-hidden="true">
+  <source src="background/esta%CC%81dio.mp4" type="video/mp4">
+  <source src="background/est%C3%A1dio.mp4" type="video/mp4">
+</video>
+<div class="bg-scrim" aria-hidden="true"></div>
+<div class="app">
+
+  <header class="topbar panel">
+    <div class="brand">
+      <div class="brand-mark" aria-hidden="true">
+        <svg viewBox="0 0 24 24"><path d="M4 20h16"/><path d="M6.5 20v-4M11 20v-7M15.5 20v-5"/><path d="M5 10.5l5-4.5 3.5 2.5L19.5 3.5"/><path d="M16 3.5h3.5V7"/></svg>
+      </div>
+      <span class="brand-name">Fut Metrics</span>
+    </div>
+    <label class="search">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.6-3.6"/></svg>
+      <input id="search" type="search" placeholder="Buscar jogador, clube, posição…" autocomplete="off" aria-label="Buscar jogador, clube ou posição">
+    </label>
+    <div class="filters" role="group" aria-label="Filtros do ranking">
+      <button class="fbtn" id="pos-btn" aria-haspopup="true" aria-expanded="false" aria-controls="pos-menu">
+        Posição <span class="fcount" id="pos-count" hidden></span>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+      </button>
+      <button class="fbtn" id="club-btn" aria-haspopup="true" aria-expanded="false" aria-controls="club-menu">
+        Clubes <span class="fcount" id="club-count" hidden></span>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+      </button>
+      <button class="fclear" id="filter-clear" hidden>Limpar filtros</button>
+    </div>
+    <button class="fbtn" id="cmp-btn" aria-pressed="false" title="Comparar o perfil de desempenho de dois jogadores">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h14l-4-4M20 16H6l4 4"/></svg>
+      <span id="cmp-label">Comparar</span>
+    </button>
+    <span class="chip gold" id="cmp-hint" role="status" hidden></span>
+  </header>
+
+  <main class="field">
+    <div class="holo-col" aria-label="Carta do jogador selecionado">
+      <div class="holo-swap">
+        <div class="holo-wrap">
+          <div class="holo-float">
+            <div class="holo-card" id="holo">
+              <div class="holo-foil"></div>
+              <div class="holo-shine"></div>
+              <div class="holo-glare"></div>
+              <div class="holo-inner" id="holo-inner"></div>
+              <div class="holo-edge"></div>
+            </div>
+          </div>
+        </div>
+        <div class="holo-shadow" aria-hidden="true"></div>
+        <span class="label holo-tier" id="holo-tier"></span>
+      </div>
+    </div>
+    <div class="rank">
+    <section class="stage" id="podium" aria-label="Pódio"></section>
+    <section class="board">
+      <div class="board-head">
+        <span class="label">#</span><span></span><span class="label">Jogador</span><span class="label" id="metric-head">Rating</span>
+      </div>
+      <div class="list scroll" id="list" role="list"></div>
+    </section>
+    </div>
+  </main>
+
+  <aside class="side side-l scroll">
+    <section class="card panel" id="presence" aria-label="Mapa de presença"></section>
+    <section class="card panel" id="penalties" aria-label="Cobranças de pênalti"></section>
+  </aside>
+
+  <aside class="side side-r scroll">
+    <section class="card panel fixed" id="profile" aria-label="Ficha técnica"></section>
+    <section class="card panel fill" id="performance" aria-label="Perfil de desempenho"></section>
+  </aside>
+
+  <section class="compare" id="compare" aria-label="Comparação entre jogadores" hidden>
+    <div class="holo-col" id="cmp-a-col"></div>
+    <section class="card panel cmp-panel" id="cmp-panel" aria-label="Comparação de perfil de desempenho"></section>
+    <div class="holo-col" id="cmp-b-col"></div>
+  </section>
+
+</div>
+
+<div class="dropdown" id="pos-menu" role="menu" aria-label="Filtrar por posição" hidden>
+  <div class="dd-head"><span class="label">Posição</span><span class="label" id="pos-hint">Selecione uma ou mais</span></div>
+  <div class="dd-list scroll" id="pos-list"></div>
+  <div class="dd-foot"><button class="fclear" data-dd-clear="pos">Limpar</button><button class="apply" data-dd-apply="pos" id="pos-apply">Filtrar</button></div>
+</div>
+<div class="dropdown" id="club-menu" role="menu" aria-label="Filtrar por clube" hidden>
+  <div class="dd-head"><span class="label">Clubes</span><span class="label" id="club-hint">Selecione um ou mais</span></div>
+  <div class="dd-list scroll" id="club-list"></div>
+  <div class="dd-foot"><button class="fclear" data-dd-clear="club">Limpar</button><button class="apply" data-dd-apply="club" id="club-apply">Filtrar</button></div>
+</div>
+
+<script>
+/* ===== DADOS EMBUTIDOS — não ler à toa (um registro por linha) ===== */
+const CLUB_COLORS = {
+"Flamengo":["#C8102E","#1A1A1A"],
+"Palmeiras":["#00843D","#0B3B24"],
+"Atlético Mineiro":["#5A5A5A","#111111"],
+"Botafogo":["#2B2B2B","#8C8C8C"],
+"Real Madrid":["#FEBE10","#00529F"],
+"Grêmio":["#0D80BF","#1A1A1A"],
+"Fluminense":["#870A28","#00613C"],
+"Santos":["#9A9A9A","#1B1B1B"],
+"Zenit":["#0091D2","#003E7E"],
+"Corinthians":["#1F1F1F","#6E6E6E"],
+"West Ham":["#7A263A","#1BB1E7"],
+"Nottm Forest":["#DD0000","#7A0000"],
+"Vasco":["#262626","#C8102E"],
+"Atlético Paranaense":["#C8102E","#111111"],
+"Cruzeiro":["#2F5DAE","#0A2A6B"],
+"São Paulo":["#D71920","#262626"],
+"Liverpool":["#C8102E","#00B2A9"],
+"Paris SG":["#004170","#DA291C"],
+"Manchester Utd":["#DA291C","#7A1010"],
+"Tottenham":["#132257","#5A6B9A"],
+"Lazio":["#5BB8E0","#1F6F99"],
+"Bahia":["#0057A8","#E30613"],
+"Real Valladolid":["#921B88","#4A0D45"],
+"Newcastle":["#6D6D6D","#241F20"],
+"Al-Hilal":["#0057B8","#00305F"],
+"PSV":["#ED1C24","#8A0F14"],
+};
+
+const PLAYERS = [
+{"player_id":1001,"player_name":"Gabriel Silva","age":28,"nationality":"Brasil","position":"CB","club_name":"Flamengo","club_coach":"Tite","contract_until":"2027-12","height_cm":189,"weight_kg":86,"appearances":22,"minutes_played":1980,"goals":2,"assists":0,"shots_total":45,"shots_on_target":12,"shot_accuracy_pct":26.7,"passes_completed":1450,"passes_total":1680,"pass_accuracy_pct":86.3,"tackles":85,"interceptions":42,"clearances":156,"rating":7.8,"games_last_5_avg_rating":7.8,"market_value_millions":45.5,"secondary_positions":"LB;RB"},
+{"player_id":1002,"player_name":"Vinícius Luiz","age":31,"nationality":"Brasil","position":"RB","club_name":"Flamengo","club_coach":"Tite","contract_until":"2026-06","height_cm":181,"weight_kg":79,"appearances":20,"minutes_played":1800,"goals":1,"assists":3,"shots_total":32,"shots_on_target":8,"shot_accuracy_pct":25.0,"passes_completed":980,"passes_total":1120,"pass_accuracy_pct":87.5,"tackles":62,"interceptions":18,"clearances":89,"rating":7.6,"games_last_5_avg_rating":7.5,"market_value_millions":28.0,"secondary_positions":""},
+{"player_id":1003,"player_name":"Thiago Heleno","age":29,"nationality":"Brasil","position":"CB","club_name":"Atlético Paranaense","club_coach":"Felipão","contract_until":"2027-12","height_cm":191,"weight_kg":87,"appearances":21,"minutes_played":1890,"goals":1,"assists":0,"shots_total":28,"shots_on_target":5,"shot_accuracy_pct":17.9,"passes_completed":1320,"passes_total":1520,"pass_accuracy_pct":86.8,"tackles":79,"interceptions":38,"clearances":142,"rating":7.9,"games_last_5_avg_rating":8.0,"market_value_millions":38.2,"secondary_positions":"LB"},
+{"player_id":1004,"player_name":"Felipe Melo","age":36,"nationality":"Brasil","position":"CM","club_name":"Fluminense","club_coach":"Mano Menezes","contract_until":"2026-12","height_cm":184,"weight_kg":82,"appearances":19,"minutes_played":1520,"goals":0,"assists":2,"shots_total":18,"shots_on_target":3,"shot_accuracy_pct":16.7,"passes_completed":1100,"passes_total":1280,"pass_accuracy_pct":85.9,"tackles":68,"interceptions":25,"clearances":45,"rating":7.4,"games_last_5_avg_rating":7.3,"market_value_millions":12.5,"secondary_positions":"LW;CB"},
+{"player_id":1005,"player_name":"Arrascaeta","age":29,"nationality":"Uruguai","position":"CM","club_name":"Flamengo","club_coach":"Tite","contract_until":"2027-06","height_cm":178,"weight_kg":72,"appearances":22,"minutes_played":1870,"goals":4,"assists":6,"shots_total":48,"shots_on_target":18,"shot_accuracy_pct":37.5,"passes_completed":1380,"passes_total":1540,"pass_accuracy_pct":89.6,"tackles":34,"interceptions":8,"clearances":12,"rating":8.1,"games_last_5_avg_rating":8.2,"market_value_millions":52.0,"secondary_positions":""},
+{"player_id":1006,"player_name":"Pedro Rocha","age":26,"nationality":"Brasil","position":"FW","club_name":"Botafogo","club_coach":"Artur Jorge","contract_until":"2027-12","height_cm":183,"weight_kg":78,"appearances":21,"minutes_played":1650,"goals":12,"assists":4,"shots_total":64,"shots_on_target":28,"shot_accuracy_pct":43.8,"passes_completed":320,"passes_total":450,"pass_accuracy_pct":71.1,"tackles":8,"interceptions":2,"clearances":8,"rating":8.4,"games_last_5_avg_rating":8.5,"market_value_millions":58.0,"secondary_positions":"RW"},
+{"player_id":1007,"player_name":"Júnior Santos","age":25,"nationality":"Brasil","position":"FW","club_name":"Botafogo","club_coach":"Artur Jorge","contract_until":"2027-12","height_cm":182,"weight_kg":75,"appearances":20,"minutes_played":1540,"goals":10,"assists":3,"shots_total":56,"shots_on_target":25,"shot_accuracy_pct":44.6,"passes_completed":280,"passes_total":420,"pass_accuracy_pct":66.7,"tackles":5,"interceptions":1,"clearances":6,"rating":8.2,"games_last_5_avg_rating":8.3,"market_value_millions":48.0,"secondary_positions":"LW;RW"},
+{"player_id":1008,"player_name":"Savinho","age":24,"nationality":"Brasil","position":"RW","club_name":"Cruzeiro","club_coach":"Fernando Diniz","contract_until":"2027-12","height_cm":175,"weight_kg":68,"appearances":23,"minutes_played":1920,"goals":8,"assists":6,"shots_total":52,"shots_on_target":22,"shot_accuracy_pct":42.3,"passes_completed":980,"passes_total":1120,"pass_accuracy_pct":87.5,"tackles":15,"interceptions":4,"clearances":5,"rating":8.3,"games_last_5_avg_rating":8.4,"market_value_millions":72.0,"secondary_positions":""},
+{"player_id":1009,"player_name":"Neymar Jr","age":32,"nationality":"Brasil","position":"LW","club_name":"Santos","club_coach":"Odair Hellmann","contract_until":"2026-06","height_cm":175,"weight_kg":68,"appearances":8,"minutes_played":520,"goals":2,"assists":1,"shots_total":28,"shots_on_target":10,"shot_accuracy_pct":35.7,"passes_completed":180,"passes_total":240,"pass_accuracy_pct":75.0,"tackles":3,"interceptions":1,"clearances":2,"rating":7.7,"games_last_5_avg_rating":7.6,"market_value_millions":85.0,"secondary_positions":"FW"},
+{"player_id":1010,"player_name":"Rodrygo","age":23,"nationality":"Brasil","position":"RW","club_name":"Real Madrid","club_coach":"Carlo Ancelotti","contract_until":"2028-06","height_cm":180,"weight_kg":75,"appearances":5,"minutes_played":180,"goals":1,"assists":0,"shots_total":12,"shots_on_target":5,"shot_accuracy_pct":41.7,"passes_completed":65,"passes_total":85,"pass_accuracy_pct":76.5,"tackles":1,"interceptions":0,"clearances":1,"rating":7.5,"games_last_5_avg_rating":7.4,"market_value_millions":95.0,"secondary_positions":"CM;FW"},
+{"player_id":1011,"player_name":"Marilson","age":27,"nationality":"Brasil","position":"LB","club_name":"São Paulo","club_coach":"Thiago Carpini","contract_until":"2027-12","height_cm":180,"weight_kg":76,"appearances":20,"minutes_played":1800,"goals":0,"assists":2,"shots_total":24,"shots_on_target":6,"shot_accuracy_pct":25.0,"passes_completed":1050,"passes_total":1210,"pass_accuracy_pct":86.8,"tackles":71,"interceptions":24,"clearances":67,"rating":7.7,"games_last_5_avg_rating":7.7,"market_value_millions":35.0,"secondary_positions":""},
+{"player_id":1012,"player_name":"Wendel","age":23,"nationality":"Brasil","position":"CM","club_name":"Zenit","club_coach":"Sergei Semak","contract_until":"2027-12","height_cm":183,"weight_kg":78,"appearances":14,"minutes_played":980,"goals":2,"assists":1,"shots_total":32,"shots_on_target":8,"shot_accuracy_pct":25.0,"passes_completed":680,"passes_total":780,"pass_accuracy_pct":87.2,"tackles":28,"interceptions":12,"clearances":8,"rating":7.8,"games_last_5_avg_rating":7.8,"market_value_millions":75.0,"secondary_positions":"CB"},
+{"player_id":1013,"player_name":"Igor Gomes","age":24,"nationality":"Brasil","position":"CM","club_name":"Corinthians","club_coach":"Mano Menezes","contract_until":"2027-12","height_cm":178,"weight_kg":71,"appearances":22,"minutes_played":1760,"goals":3,"assists":4,"shots_total":38,"shots_on_target":12,"shot_accuracy_pct":31.6,"passes_completed":1220,"passes_total":1380,"pass_accuracy_pct":88.4,"tackles":42,"interceptions":16,"clearances":15,"rating":8.0,"games_last_5_avg_rating":8.0,"market_value_millions":42.0,"secondary_positions":"LW;RW"},
+{"player_id":1014,"player_name":"Yuri Alberto","age":22,"nationality":"Brasil","position":"FW","club_name":"Corinthians","club_coach":"Mano Menezes","contract_until":"2027-06","height_cm":183,"weight_kg":76,"appearances":19,"minutes_played":1420,"goals":9,"assists":2,"shots_total":48,"shots_on_target":21,"shot_accuracy_pct":43.8,"passes_completed":250,"passes_total":380,"pass_accuracy_pct":65.8,"tackles":4,"interceptions":0,"clearances":7,"rating":8.1,"games_last_5_avg_rating":8.2,"market_value_millions":55.0,"secondary_positions":""},
+{"player_id":1015,"player_name":"Gustavo Scarpa","age":28,"nationality":"Brasil","position":"CM","club_name":"Palmeiras","club_coach":"Abel Ferreira","contract_until":"2027-12","height_cm":180,"weight_kg":74,"appearances":21,"minutes_played":1820,"goals":5,"assists":5,"shots_total":42,"shots_on_target":15,"shot_accuracy_pct":35.7,"passes_completed":1380,"passes_total":1540,"pass_accuracy_pct":89.6,"tackles":25,"interceptions":8,"clearances":10,"rating":8.2,"games_last_5_avg_rating":8.2,"market_value_millions":60.0,"secondary_positions":"CB"},
+{"player_id":1016,"player_name":"Raphael Veiga","age":27,"nationality":"Brasil","position":"CM","club_name":"Palmeiras","club_coach":"Abel Ferreira","contract_until":"2027-12","height_cm":178,"weight_kg":72,"appearances":23,"minutes_played":1950,"goals":4,"assists":7,"shots_total":38,"shots_on_target":14,"shot_accuracy_pct":36.8,"passes_completed":1420,"passes_total":1580,"pass_accuracy_pct":89.9,"tackles":28,"interceptions":10,"clearances":12,"rating":8.3,"games_last_5_avg_rating":8.3,"market_value_millions":58.0,"secondary_positions":"LW;CB"},
+{"player_id":1017,"player_name":"Dudu","age":32,"nationality":"Brasil","position":"RW","club_name":"Palmeiras","club_coach":"Abel Ferreira","contract_until":"2027-12","height_cm":177,"weight_kg":70,"appearances":20,"minutes_played":1680,"goals":6,"assists":5,"shots_total":44,"shots_on_target":18,"shot_accuracy_pct":40.9,"passes_completed":920,"passes_total":1080,"pass_accuracy_pct":85.2,"tackles":12,"interceptions":3,"clearances":8,"rating":8.0,"games_last_5_avg_rating":8.0,"market_value_millions":42.0,"secondary_positions":""},
+{"player_id":1018,"player_name":"Richard Ríos","age":22,"nationality":"Colômbia","position":"CM","club_name":"Palmeiras","club_coach":"Abel Ferreira","contract_until":"2027-12","height_cm":181,"weight_kg":73,"appearances":15,"minutes_played":1080,"goals":1,"assists":2,"shots_total":22,"shots_on_target":6,"shot_accuracy_pct":27.3,"passes_completed":750,"passes_total":860,"pass_accuracy_pct":87.2,"tackles":32,"interceptions":14,"clearances":12,"rating":7.9,"games_last_5_avg_rating":7.9,"market_value_millions":68.0,"secondary_positions":"CB"},
+{"player_id":1019,"player_name":"Vinicius Junior","age":24,"nationality":"Brasil","position":"LW","club_name":"Real Madrid","club_coach":"Carlo Ancelotti","contract_until":"2028-06","height_cm":180,"weight_kg":73,"appearances":18,"minutes_played":1440,"goals":12,"assists":5,"shots_total":56,"shots_on_target":28,"shot_accuracy_pct":50.0,"passes_completed":620,"passes_total":800,"pass_accuracy_pct":77.5,"tackles":18,"interceptions":7,"clearances":5,"rating":8.5,"games_last_5_avg_rating":8.5,"market_value_millions":165.0,"secondary_positions":"CM;LB"},
+{"player_id":1020,"player_name":"Alisson","age":31,"nationality":"Brasil","position":"CB","club_name":"Liverpool","club_coach":"Jürgen Klopp","contract_until":"2027-12","height_cm":188,"weight_kg":88,"appearances":22,"minutes_played":1980,"goals":1,"assists":0,"shots_total":34,"shots_on_target":8,"shot_accuracy_pct":23.5,"passes_completed":1680,"passes_total":1920,"pass_accuracy_pct":87.5,"tackles":92,"interceptions":48,"clearances":168,"rating":8.0,"games_last_5_avg_rating":8.0,"market_value_millions":38.0,"secondary_positions":""},
+{"player_id":1021,"player_name":"Militão","age":25,"nationality":"Brasil","position":"CB","club_name":"Real Madrid","club_coach":"Carlo Ancelotti","contract_until":"2028-12","height_cm":188,"weight_kg":85,"appearances":20,"minutes_played":1800,"goals":0,"assists":1,"shots_total":28,"shots_on_target":6,"shot_accuracy_pct":21.4,"passes_completed":1420,"passes_total":1620,"pass_accuracy_pct":87.7,"tackles":84,"interceptions":40,"clearances":145,"rating":8.1,"games_last_5_avg_rating":8.1,"market_value_millions":85.0,"secondary_positions":"LB"},
+{"player_id":1022,"player_name":"Marquinhos","age":29,"nationality":"Brasil","position":"CB","club_name":"Paris SG","club_coach":"Luis Enrique","contract_until":"2027-12","height_cm":187,"weight_kg":84,"appearances":19,"minutes_played":1710,"goals":1,"assists":0,"shots_total":25,"shots_on_target":5,"shot_accuracy_pct":20.0,"passes_completed":1380,"passes_total":1560,"pass_accuracy_pct":88.5,"tackles":76,"interceptions":36,"clearances":128,"rating":8.2,"games_last_5_avg_rating":8.2,"market_value_millions":62.0,"secondary_positions":"RB;LB"},
+{"player_id":1023,"player_name":"Thiago Silva","age":39,"nationality":"Brasil","position":"CB","club_name":"Fluminense","club_coach":"Mano Menezes","contract_until":"2026-12","height_cm":183,"weight_kg":80,"appearances":18,"minutes_played":1620,"goals":0,"assists":1,"shots_total":20,"shots_on_target":3,"shot_accuracy_pct":15.0,"passes_completed":1280,"passes_total":1460,"pass_accuracy_pct":87.7,"tackles":68,"interceptions":35,"clearances":118,"rating":7.8,"games_last_5_avg_rating":7.8,"market_value_millions":8.0,"secondary_positions":""},
+{"player_id":1024,"player_name":"Casemiro","age":32,"nationality":"Brasil","position":"CM","club_name":"Manchester Utd","club_coach":"Erik ten Hag","contract_until":"2027-12","height_cm":184,"weight_kg":82,"appearances":21,"minutes_played":1680,"goals":2,"assists":0,"shots_total":32,"shots_on_target":8,"shot_accuracy_pct":25.0,"passes_completed":1220,"passes_total":1380,"pass_accuracy_pct":88.4,"tackles":64,"interceptions":28,"clearances":18,"rating":7.9,"games_last_5_avg_rating":7.9,"market_value_millions":48.0,"secondary_positions":"CB"},
+{"player_id":1025,"player_name":"Paquetá","age":26,"nationality":"Brasil","position":"CM","club_name":"West Ham","club_coach":"Julen Lopetegui","contract_until":"2028-12","height_cm":181,"weight_kg":76,"appearances":22,"minutes_played":1760,"goals":3,"assists":4,"shots_total":38,"shots_on_target":12,"shot_accuracy_pct":31.6,"passes_completed":1340,"passes_total":1520,"pass_accuracy_pct":88.2,"tackles":35,"interceptions":12,"clearances":12,"rating":8.1,"games_last_5_avg_rating":8.1,"market_value_millions":72.0,"secondary_positions":"LW;RW"},
+{"player_id":1026,"player_name":"Richarlison","age":26,"nationality":"Brasil","position":"FW","club_name":"Tottenham","club_coach":"Ange Postecoglou","contract_until":"2027-12","height_cm":183,"weight_kg":78,"appearances":18,"minutes_played":1320,"goals":6,"assists":3,"shots_total":44,"shots_on_target":18,"shot_accuracy_pct":40.9,"passes_completed":380,"passes_total":520,"pass_accuracy_pct":73.1,"tackles":6,"interceptions":2,"clearances":5,"rating":8.0,"games_last_5_avg_rating":8.0,"market_value_millions":68.0,"secondary_positions":""},
+{"player_id":1027,"player_name":"Felipe Anderson","age":31,"nationality":"Brasil","position":"LW","club_name":"Lazio","club_coach":"Marco Baroni","contract_until":"2026-12","height_cm":180,"weight_kg":74,"appearances":15,"minutes_played":1020,"goals":4,"assists":2,"shots_total":28,"shots_on_target":10,"shot_accuracy_pct":35.7,"passes_completed":580,"passes_total":680,"pass_accuracy_pct":85.3,"tackles":8,"interceptions":2,"clearances":4,"rating":7.7,"games_last_5_avg_rating":7.6,"market_value_millions":22.0,"secondary_positions":"FW"},
+{"player_id":1028,"player_name":"Éverton Ribeiro","age":36,"nationality":"Brasil","position":"CM","club_name":"Bahia","club_coach":"Rogério Ceni","contract_until":"2026-12","height_cm":178,"weight_kg":71,"appearances":16,"minutes_played":1200,"goals":1,"assists":2,"shots_total":18,"shots_on_target":4,"shot_accuracy_pct":22.2,"passes_completed":980,"passes_total":1120,"pass_accuracy_pct":87.5,"tackles":22,"interceptions":8,"clearances":6,"rating":7.4,"games_last_5_avg_rating":7.3,"market_value_millions":6.5,"secondary_positions":"LW;CB"},
+{"player_id":1029,"player_name":"Guilherme Arana","age":26,"nationality":"Brasil","position":"LB","club_name":"Atlético Mineiro","club_coach":"Gabriel Milito","contract_until":"2027-12","height_cm":181,"weight_kg":74,"appearances":21,"minutes_played":1890,"goals":1,"assists":1,"shots_total":22,"shots_on_target":6,"shot_accuracy_pct":27.3,"passes_completed":1120,"passes_total":1280,"pass_accuracy_pct":87.5,"tackles":65,"interceptions":20,"clearances":58,"rating":7.8,"games_last_5_avg_rating":7.8,"market_value_millions":48.0,"secondary_positions":""},
+{"player_id":1030,"player_name":"Guga","age":25,"nationality":"Brasil","position":"RB","club_name":"Atlético Mineiro","club_coach":"Gabriel Milito","contract_until":"2027-12","height_cm":182,"weight_kg":76,"appearances":20,"minutes_played":1800,"goals":0,"assists":2,"shots_total":18,"shots_on_target":4,"shot_accuracy_pct":22.2,"passes_completed":1050,"passes_total":1200,"pass_accuracy_pct":87.5,"tackles":72,"interceptions":18,"clearances":64,"rating":7.7,"games_last_5_avg_rating":7.7,"market_value_millions":42.0,"secondary_positions":"CB"},
+{"player_id":1031,"player_name":"Hulk","age":37,"nationality":"Brasil","position":"FW","club_name":"Atlético Mineiro","club_coach":"Gabriel Milito","contract_until":"2027-06","height_cm":188,"weight_kg":88,"appearances":18,"minutes_played":1440,"goals":8,"assists":2,"shots_total":54,"shots_on_target":24,"shot_accuracy_pct":44.4,"passes_completed":420,"passes_total":580,"pass_accuracy_pct":72.4,"tackles":8,"interceptions":1,"clearances":6,"rating":7.8,"games_last_5_avg_rating":7.9,"market_value_millions":15.0,"secondary_positions":"LW;RW"},
+{"player_id":1032,"player_name":"Igor","age":23,"nationality":"Brasil","position":"CB","club_name":"Atlético Mineiro","club_coach":"Gabriel Milito","contract_until":"2027-12","height_cm":189,"weight_kg":86,"appearances":22,"minutes_played":1980,"goals":0,"assists":0,"shots_total":32,"shots_on_target":6,"shot_accuracy_pct":18.8,"passes_completed":1520,"passes_total":1720,"pass_accuracy_pct":88.4,"tackles":88,"interceptions":42,"clearances":156,"rating":7.9,"games_last_5_avg_rating":7.9,"market_value_millions":52.0,"secondary_positions":""},
+{"player_id":1033,"player_name":"Alan Franco","age":26,"nationality":"Equador","position":"CM","club_name":"Atlético Mineiro","club_coach":"Gabriel Milito","contract_until":"2027-12","height_cm":178,"weight_kg":70,"appearances":21,"minutes_played":1890,"goals":1,"assists":1,"shots_total":28,"shots_on_target":6,"shot_accuracy_pct":21.4,"passes_completed":1380,"passes_total":1560,"pass_accuracy_pct":88.5,"tackles":45,"interceptions":18,"clearances":14,"rating":8.0,"games_last_5_avg_rating":8.0,"market_value_millions":38.0,"secondary_positions":"CB"},
+{"player_id":1034,"player_name":"Éverson","age":29,"nationality":"Brasil","position":"GK","club_name":"Atlético Mineiro","club_coach":"Gabriel Milito","contract_until":"2027-12","height_cm":188,"weight_kg":82,"appearances":22,"minutes_played":1980,"goals":0,"assists":0,"shots_total":0,"shots_on_target":0,"shot_accuracy_pct":0.0,"passes_completed":450,"passes_total":520,"pass_accuracy_pct":86.5,"tackles":0,"interceptions":2,"clearances":12,"rating":8.1,"games_last_5_avg_rating":8.1,"market_value_millions":42.0,"secondary_positions":""},
+{"player_id":1035,"player_name":"Gonzalo Plata","age":24,"nationality":"Equador","position":"RW","club_name":"Real Valladolid","club_coach":"Paulo Pezzolano","contract_until":"2026-12","height_cm":175,"weight_kg":68,"appearances":12,"minutes_played":840,"goals":3,"assists":2,"shots_total":28,"shots_on_target":12,"shot_accuracy_pct":42.9,"passes_completed":420,"passes_total":520,"pass_accuracy_pct":80.8,"tackles":6,"interceptions":2,"clearances":3,"rating":7.8,"games_last_5_avg_rating":7.8,"market_value_millions":35.0,"secondary_positions":""},
+{"player_id":1036,"player_name":"Diego Costa","age":36,"nationality":"Espanha","position":"FW","club_name":"Grêmio","club_coach":"Renato Portaluppi","contract_until":"2026-12","height_cm":184,"weight_kg":85,"appearances":8,"minutes_played":480,"goals":3,"assists":0,"shots_total":24,"shots_on_target":12,"shot_accuracy_pct":50.0,"passes_completed":180,"passes_total":280,"pass_accuracy_pct":64.3,"tackles":2,"interceptions":0,"clearances":4,"rating":7.6,"games_last_5_avg_rating":7.5,"market_value_millions":8.0,"secondary_positions":"RW"},
+{"player_id":1037,"player_name":"Campaz","age":27,"nationality":"Colômbia","position":"LW","club_name":"Grêmio","club_coach":"Renato Portaluppi","contract_until":"2027-12","height_cm":177,"weight_kg":70,"appearances":19,"minutes_played":1480,"goals":5,"assists":3,"shots_total":38,"shots_on_target":16,"shot_accuracy_pct":42.1,"passes_completed":720,"passes_total":850,"pass_accuracy_pct":84.7,"tackles":12,"interceptions":4,"clearances":6,"rating":8.0,"games_last_5_avg_rating":8.0,"market_value_millions":48.0,"secondary_positions":"CM;LB"},
+{"player_id":1038,"player_name":"Soteldo","age":25,"nationality":"Venezuela","position":"RW","club_name":"Grêmio","club_coach":"Renato Portaluppi","contract_until":"2027-06","height_cm":170,"weight_kg":66,"appearances":14,"minutes_played":1050,"goals":4,"assists":2,"shots_total":32,"shots_on_target":14,"shot_accuracy_pct":43.8,"passes_completed":580,"passes_total":720,"pass_accuracy_pct":80.6,"tackles":8,"interceptions":2,"clearances":4,"rating":8.1,"games_last_5_avg_rating":8.1,"market_value_millions":62.0,"secondary_positions":""},
+{"player_id":1039,"player_name":"Moisés","age":28,"nationality":"Brasil","position":"LW","club_name":"Botafogo","club_coach":"Artur Jorge","contract_until":"2027-12","height_cm":180,"weight_kg":75,"appearances":22,"minutes_played":1760,"goals":6,"assists":4,"shots_total":42,"shots_on_target":18,"shot_accuracy_pct":42.9,"passes_completed":820,"passes_total":960,"pass_accuracy_pct":85.4,"tackles":14,"interceptions":3,"clearances":8,"rating":8.1,"games_last_5_avg_rating":8.1,"market_value_millions":58.0,"secondary_positions":"FW"},
+{"player_id":1040,"player_name":"Romildo Dias","age":34,"nationality":"Brasil","position":"CB","club_name":"Santos","club_coach":"Odair Hellmann","contract_until":"2026-12","height_cm":188,"weight_kg":86,"appearances":15,"minutes_played":1350,"goals":1,"assists":0,"shots_total":24,"shots_on_target":4,"shot_accuracy_pct":16.7,"passes_completed":1120,"passes_total":1280,"pass_accuracy_pct":87.5,"tackles":62,"interceptions":28,"clearances":108,"rating":7.5,"games_last_5_avg_rating":7.4,"market_value_millions":12.0,"secondary_positions":"RB;LB"},
+{"player_id":1041,"player_name":"Sousa","age":22,"nationality":"Brasil","position":"CM","club_name":"Flamengo","club_coach":"Tite","contract_until":"2028-12","height_cm":180,"weight_kg":74,"appearances":14,"minutes_played":980,"goals":1,"assists":2,"shots_total":24,"shots_on_target":6,"shot_accuracy_pct":25.0,"passes_completed":720,"passes_total":840,"pass_accuracy_pct":85.7,"tackles":28,"interceptions":12,"clearances":10,"rating":7.8,"games_last_5_avg_rating":7.8,"market_value_millions":42.0,"secondary_positions":""},
+{"player_id":1042,"player_name":"Bruno Guimarães","age":26,"nationality":"Brasil","position":"CM","club_name":"Newcastle","club_coach":"Eddie Howe","contract_until":"2028-12","height_cm":181,"weight_kg":75,"appearances":20,"minutes_played":1680,"goals":2,"assists":1,"shots_total":32,"shots_on_target":8,"shot_accuracy_pct":25.0,"passes_completed":1280,"passes_total":1460,"pass_accuracy_pct":87.7,"tackles":46,"interceptions":20,"clearances":12,"rating":8.0,"games_last_5_avg_rating":8.0,"market_value_millions":92.0,"secondary_positions":"CB"},
+{"player_id":1043,"player_name":"Lucas Paquetá","age":26,"nationality":"Brasil","position":"CM","club_name":"West Ham","club_coach":"Julen Lopetegui","contract_until":"2028-12","height_cm":181,"weight_kg":76,"appearances":22,"minutes_played":1760,"goals":3,"assists":4,"shots_total":38,"shots_on_target":12,"shot_accuracy_pct":31.6,"passes_completed":1340,"passes_total":1520,"pass_accuracy_pct":88.2,"tackles":35,"interceptions":12,"clearances":12,"rating":8.1,"games_last_5_avg_rating":8.1,"market_value_millions":72.0,"secondary_positions":"LW;RW"},
+{"player_id":1044,"player_name":"Ney","age":26,"nationality":"Brasil","position":"FW","club_name":"Al-Hilal","club_coach":"Jorge Jesus","contract_until":"2027-06","height_cm":175,"weight_kg":68,"appearances":16,"minutes_played":1120,"goals":6,"assists":3,"shots_total":42,"shots_on_target":18,"shot_accuracy_pct":42.9,"passes_completed":620,"passes_total":780,"pass_accuracy_pct":79.5,"tackles":8,"interceptions":2,"clearances":6,"rating":8.1,"games_last_5_avg_rating":8.1,"market_value_millions":95.0,"secondary_positions":""},
+{"player_id":1045,"player_name":"Claudinho","age":26,"nationality":"Brasil","position":"CM","club_name":"Zenit","club_coach":"Sergei Semak","contract_until":"2027-12","height_cm":177,"weight_kg":71,"appearances":18,"minutes_played":1440,"goals":4,"assists":3,"shots_total":32,"shots_on_target":12,"shot_accuracy_pct":37.5,"passes_completed":1080,"passes_total":1240,"pass_accuracy_pct":87.1,"tackles":32,"interceptions":14,"clearances":14,"rating":8.0,"games_last_5_avg_rating":8.0,"market_value_millions":68.0,"secondary_positions":"CB"},
+{"player_id":1046,"player_name":"Murilo","age":24,"nationality":"Brasil","position":"CB","club_name":"Nottm Forest","club_coach":"Chris Wood","contract_until":"2029-12","height_cm":189,"weight_kg":86,"appearances":12,"minutes_played":1080,"goals":0,"assists":0,"shots_total":18,"shots_on_target":4,"shot_accuracy_pct":22.2,"passes_completed":860,"passes_total":980,"pass_accuracy_pct":87.8,"tackles":68,"interceptions":28,"clearances":92,"rating":7.8,"games_last_5_avg_rating":7.8,"market_value_millions":62.0,"secondary_positions":"RB;LB"},
+{"player_id":1047,"player_name":"Antonio Carlos","age":30,"nationality":"Brasil","position":"CB","club_name":"Nottm Forest","club_coach":"Chris Wood","contract_until":"2027-12","height_cm":190,"weight_kg":87,"appearances":20,"minutes_played":1800,"goals":1,"assists":0,"shots_total":28,"shots_on_target":6,"shot_accuracy_pct":21.4,"passes_completed":1380,"passes_total":1560,"pass_accuracy_pct":88.5,"tackles":78,"interceptions":36,"clearances":126,"rating":7.9,"games_last_5_avg_rating":7.9,"market_value_millions":45.0,"secondary_positions":""},
+{"player_id":1048,"player_name":"Kleberson","age":25,"nationality":"Brasil","position":"CM","club_name":"PSV","club_coach":"Peter Bosz","contract_until":"2026-12","height_cm":181,"weight_kg":76,"appearances":16,"minutes_played":1280,"goals":2,"assists":2,"shots_total":28,"shots_on_target":10,"shot_accuracy_pct":35.7,"passes_completed":1020,"passes_total":1180,"pass_accuracy_pct":86.4,"tackles":24,"interceptions":10,"clearances":8,"rating":7.9,"games_last_5_avg_rating":7.9,"market_value_millions":55.0,"secondary_positions":"CB"},
+{"player_id":1049,"player_name":"Igor Vinhas","age":28,"nationality":"Brasil","position":"CB","club_name":"Vasco","club_coach":"Rafael Paiva","contract_until":"2027-12","height_cm":190,"weight_kg":87,"appearances":20,"minutes_played":1800,"goals":1,"assists":0,"shots_total":26,"shots_on_target":4,"shot_accuracy_pct":15.4,"passes_completed":1320,"passes_total":1500,"pass_accuracy_pct":88.0,"tackles":80,"interceptions":38,"clearances":140,"rating":7.8,"games_last_5_avg_rating":7.8,"market_value_millions":38.0,"secondary_positions":"LB;RB"},
+{"player_id":1050,"player_name":"Crucho","age":30,"nationality":"Brasil","position":"FW","club_name":"Vasco","club_coach":"Rafael Paiva","contract_until":"2026-12","height_cm":182,"weight_kg":78,"appearances":18,"minutes_played":1320,"goals":7,"assists":2,"shots_total":46,"shots_on_target":20,"shot_accuracy_pct":43.5,"passes_completed":340,"passes_total":480,"pass_accuracy_pct":70.8,"tackles":6,"interceptions":1,"clearances":8,"rating":7.9,"games_last_5_avg_rating":7.9,"market_value_millions":28.0,"secondary_positions":""},
+];
+
+const MARKET_HISTORY = {
+"1001":[["2024-08",64.5],["2025-02",54.8],["2025-08",46.6],["2026-02",39.6],["2026-05",42.8],["2026-08",45.5]],
+"1002":[["2024-08",48.9],["2025-02",39.8],["2025-08",32.5],["2026-02",26.6],["2026-05",27.5],["2026-08",28.0]],
+"1003":[["2024-08",64.3],["2025-02",50.2],["2025-08",39.4],["2026-02",39.4],["2026-05",39.0],["2026-08",38.2]],
+"1004":[["2024-08",25.7],["2025-02",19.3],["2025-08",14.6],["2026-02",14.0],["2026-05",13.3],["2026-08",12.5]],
+"1005":[["2024-08",80.9],["2025-02",58.4],["2025-08",53.8],["2026-02",49.3],["2026-05",45.0],["2026-08",52.0]],
+"1006":[["2024-08",87.1],["2025-02",77.0],["2025-08",67.9],["2026-02",59.8],["2026-05",52.5],["2026-08",58.0]],
+"1007":[["2024-08",69.9],["2025-02",59.1],["2025-08",50.0],["2026-02",42.3],["2026-05",45.4],["2026-08",48.0]],
+"1008":[["2024-08",128.6],["2025-02",104.1],["2025-08",84.6],["2026-02",69.0],["2026-05",70.9],["2026-08",72.0]],
+"1009":[["2024-08",146.5],["2025-02",113.8],["2025-08",89.0],["2026-02",88.5],["2026-05",87.1],["2026-08",85.0]],
+"1010":[["2024-08",200.2],["2025-02",149.5],["2025-08",112.6],["2026-02",107.1],["2026-05",101.2],["2026-08",95.0]],
+"1011":[["2024-08",55.7],["2025-02",40.0],["2025-08",36.7],["2026-02",33.5],["2026-05",30.4],["2026-08",35.0]],
+"1012":[["2024-08",115.3],["2025-02",101.4],["2025-08",89.0],["2026-02",78.0],["2026-05",68.2],["2026-08",75.0]],
+"1013":[["2024-08",62.5],["2025-02",52.6],["2025-08",44.3],["2026-02",37.3],["2026-05",39.9],["2026-08",42.0]],
+"1014":[["2024-08",100.5],["2025-02",81.0],["2025-08",65.5],["2026-02",53.2],["2026-05",54.4],["2026-08",55.0]],
+"1015":[["2024-08",106.0],["2025-02",82.0],["2025-08",63.8],["2026-02",63.1],["2026-05",61.8],["2026-08",60.0]],
+"1016":[["2024-08",98.1],["2025-02",72.9],["2025-08",69.6],["2026-02",65.9],["2026-05",62.0],["2026-08",58.0]],
+"1017":[["2024-08",68.5],["2025-02",49.0],["2025-08",44.7],["2026-02",40.6],["2026-05",36.7],["2026-08",42.0]],
+"1018":[["2024-08",107.2],["2025-02",93.8],["2025-08",81.9],["2026-02",71.4],["2026-05",62.2],["2026-08",68.0]],
+"1019":[["2024-08",252.0],["2025-02",210.9],["2025-08",176.7],["2026-02",148.2],["2026-05",157.5],["2026-08",165.0]],
+"1020":[["2024-08",71.2],["2025-02",57.1],["2025-08",46.0],["2026-02",37.2],["2026-05",37.8],["2026-08",38.0]],
+"1021":[["2024-08",153.7],["2025-02",118.3],["2025-08",91.7],["2026-02",90.2],["2026-05",87.9],["2026-08",85.0]],
+"1022":[["2024-08",107.7],["2025-02",79.7],["2025-08",75.6],["2026-02",71.2],["2026-05",66.6],["2026-08",62.0]],
+"1023":[["2024-08",13.3],["2025-02",9.5],["2025-08",8.6],["2026-02",7.8],["2026-05",7.0],["2026-08",8.0]],
+"1024":[["2024-08",77.4],["2025-02",67.4],["2025-08",58.6],["2026-02",50.9],["2026-05",44.1],["2026-08",48.0]],
+"1025":[["2024-08",112.8],["2025-02",93.9],["2025-08",78.3],["2026-02",65.4],["2026-05",69.1],["2026-08",72.0]],
+"1026":[["2024-08",102.4],["2025-02",81.7],["2025-08",65.5],["2026-02",67.1],["2026-05",67.9],["2026-08",68.0]],
+"1027":[["2024-08",40.7],["2025-02",31.2],["2025-08",24.1],["2026-02",23.6],["2026-05",22.9],["2026-08",22.0]],
+"1028":[["2024-08",11.5],["2025-02",8.5],["2025-08",8.0],["2026-02",7.5],["2026-05",7.0],["2026-08",6.5]],
+"1029":[["2024-08",82.2],["2025-02",58.3],["2025-08",52.6],["2026-02",47.3],["2026-05",42.4],["2026-08",48.0]],
+"1030":[["2024-08",69.4],["2025-02",60.1],["2025-08",52.0],["2026-02",44.9],["2026-05",38.8],["2026-08",42.0]],
+"1031":[["2024-08",24.1],["2025-02",20.0],["2025-08",16.6],["2026-02",13.8],["2026-05",14.5],["2026-08",15.0]],
+"1032":[["2024-08",80.5],["2025-02",63.9],["2025-08",51.0],["2026-02",51.9],["2026-05",52.2],["2026-08",52.0]],
+"1033":[["2024-08",72.0],["2025-02",54.9],["2025-08",42.2],["2026-02",41.1],["2026-05",39.7],["2026-08",38.0]],
+"1034":[["2024-08",76.4],["2025-02",56.0],["2025-08",52.6],["2026-02",49.1],["2026-05",45.5],["2026-08",42.0]],
+"1035":[["2024-08",61.5],["2025-02",43.4],["2025-08",39.0],["2026-02",34.9],["2026-05",31.1],["2026-08",35.0]],
+"1036":[["2024-08",13.5],["2025-02",11.6],["2025-08",10.0],["2026-02",8.6],["2026-05",7.4],["2026-08",8.0]],
+"1037":[["2024-08",79.0],["2025-02",65.1],["2025-08",53.8],["2026-02",44.5],["2026-05",46.5],["2026-08",48.0]],
+"1038":[["2024-08",98.2],["2025-02",77.6],["2025-08",61.6],["2026-02",62.4],["2026-05",62.5],["2026-08",62.0]],
+"1039":[["2024-08",112.5],["2025-02",85.4],["2025-08",65.3],["2026-02",63.3],["2026-05",60.8],["2026-08",58.0]],
+"1040":[["2024-08",22.5],["2025-02",16.4],["2025-08",15.3],["2026-02",14.2],["2026-05",13.1],["2026-08",12.0]],
+"1041":[["2024-08",75.5],["2025-02",53.1],["2025-08",47.4],["2026-02",42.2],["2026-05",37.5],["2026-08",42.0]],
+"1042":[["2024-08",125.7],["2025-02",107.7],["2025-08",92.2],["2026-02",78.9],["2026-05",85.9],["2026-08",92.0]],
+"1043":[["2024-08",121.4],["2025-02",99.5],["2025-08",81.8],["2026-02",67.4],["2026-05",70.1],["2026-08",72.0]],
+"1044":[["2024-08",154.3],["2025-02",121.3],["2025-08",95.9],["2026-02",96.6],["2026-05",96.3],["2026-08",95.0]],
+"1045":[["2024-08",135.0],["2025-02",102.0],["2025-08",77.7],["2026-02",74.9],["2026-05",71.6],["2026-08",68.0]],
+"1046":[["2024-08",118.3],["2025-02",86.0],["2025-08",79.9],["2026-02",73.8],["2026-05",67.8],["2026-08",62.0]],
+"1047":[["2024-08",83.0],["2025-02",58.1],["2025-08",51.6],["2026-02",45.7],["2026-05",40.4],["2026-08",45.0]],
+"1048":[["2024-08",77.1],["2025-02",65.7],["2025-08",56.0],["2026-02",47.7],["2026-05",51.6],["2026-08",55.0]],
+"1049":[["2024-08",65.6],["2025-02",53.5],["2025-08",43.8],["2026-02",35.9],["2026-05",37.2],["2026-08",38.0]],
+"1050":[["2024-08",46.4],["2025-02",36.3],["2025-08",28.6],["2026-02",28.7],["2026-05",28.5],["2026-08",28.0]],
+};
+</script>
+<script>
+/* ===== JS: configuração ===== */
+const POSITION_LABELS = {
+  GK:'Goleiro', CB:'Zagueiro', LB:'Lateral-esquerdo', RB:'Lateral-direito',
+  CM:'Meio-campista', LW:'Ponta-esquerda', RW:'Ponta-direita', FW:'Atacante'
+};
+const MONTHS = ['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'];
+const RATING_MAX = 10;
+
+/* ===== JS: helpers ===== */
+const $ = (sel) => document.querySelector(sel);
+const fmt = (n, d = 0) => Number(n).toLocaleString('pt-BR', {minimumFractionDigits:d, maximumFractionDigits:d});
+const norm = (s) => String(s).normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase();
+const slug = (s) => norm(s).replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'');
+const clubClass = (club) => 'club-' + slug(club);
+function initials(name){
+  const parts = name.trim().split(/\s+/);
+  return (parts.length > 1 ? parts[0][0] + parts[parts.length-1][0] : name.slice(0,2)).toUpperCase();
+}
+function period(p, long){ // "2027-12" -> "dez/2027" | "dez/27"
+  const [y, m] = p.split('-');
+  return MONTHS[+m - 1] + '/' + (long ? y : y.slice(2));
+}
+/* ===== JS: imagens (fotos de jogador, brasões) — caminhos relativos à raiz do projeto ===== */
+const PHOTO_ALIAS = { neymar_jr: 'neymar' };          // nome no CSV -> nome do arquivo, quando diferem
+// brasões: nomes de arquivo como estão na pasta clubes/ (sem padrão único; alguns sem extensão)
+const CREST_FILES = {
+  'Atlético Mineiro': 'Atletico_mineiro.png',
+  'Botafogo': 'botafogo',
+  'Corinthians': 'Corinthians.png',
+  'Cruzeiro': 'cruzeiro',
+  'Grêmio': 'Gremio.png',
+  'Lazio': 'Lazio.png',
+  'Palmeiras': 'palmeiras.png',
+  'Real Madrid': 'Real_Madrid.png',
+  'Real Valladolid': 'Real_Valladolid.png',
+  'Santos': 'Santos.png',
+  'Tottenham': 'Tottenham.png',
+  'Vasco': 'vasco.png'
+};
+const photoSlug = (name) => { const s = norm(name).replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, ''); return PHOTO_ALIAS[s] || s; };
+const facePath = (p) => `jogadores/face_${photoSlug(p.player_name)}.png`;
+const cardPath = (p) => `jogadores/card_${photoSlug(p.player_name)}.png`;
+const crestPath = (club) => CREST_FILES[club] ? `clubes/${encodeURIComponent(CREST_FILES[club])}` : null;
+const img = (src) => src ? `<img class="ph" src="${src}" alt="" decoding="async">` : '';
+// carregou -> marca o pai com .ph-ok (esconde a sigla); falhou/inexistente -> remove a <img> e a sigla fica
+document.addEventListener('load', (e) => { const t = e.target; if (t.classList && t.classList.contains('ph')) t.parentElement.classList.add('ph-ok'); }, true);
+document.addEventListener('error', (e) => { const t = e.target; if (t.classList && t.classList.contains('ph')) t.remove(); }, true);
+function crest(club, cls = ''){
+  return `<span class="crest ${cls} ${clubClass(club)}" aria-hidden="true"><span class="ini">${initials(club)}</span>${img(crestPath(club))}</span>`;
+}
+
+function avatar(p, size = ''){
+  return `<span class="avatar ${size} ${clubClass(p.club_name)}" aria-hidden="true"><span class="ini">${initials(p.player_name)}</span>${img(facePath(p))}</span>`;
+}
+
+
+/* regras CSS dinâmicas: valores que mudam em tempo real (ponteiro da carta, brilho do campo)
+   são escritos numa folha de estilo própria via CSSOM — nunca em style="" inline */
+const DYN_SHEET = (() => { const t = document.createElement('style'); t.id = 'dyn-rules'; document.head.appendChild(t); return t.sheet; })();
+function dynRule(selector){ const i = DYN_SHEET.insertRule(`${selector}{}`, DYN_SHEET.cssRules.length); return DYN_SHEET.cssRules[i]; }
+
+/* gera classes de cor por clube (CLUB_COLORS) e larguras de barra .w0–.w100 — evita estilo inline */
+(function injectGeneratedStyles(){
+  const clubs = Object.entries(CLUB_COLORS)
+    .map(([club, [c1, c2]]) => `.${clubClass(club)}{--c1:${c1};--c2:${c2}}`);
+  const widths = Array.from({length: 21}, (_, i) => `.bar .w${i*5}{width:${i*5}%}`);
+  const css = clubs.concat(widths).join('\n');
+  const tag = document.createElement('style');
+  tag.textContent = css;
+  document.head.appendChild(tag);
+})();
+
+/* ===== JS: dados derivados ===== */
+const RANKED = [...PLAYERS]
+  .sort((a, b) => b.rating - a.rating || b.games_last_5_avg_rating - a.games_last_5_avg_rating || b.minutes_played - a.minutes_played)
+  .map((p, i) => ({...p, rank: i + 1, searchKey: norm([p.player_name, p.club_name, p.position, POSITION_LABELS[p.position], p.nationality].join(' '))}));
+const BY_ID = Object.fromEntries(RANKED.map(p => [p.player_id, p]));
+
+/* métricas que podem ordenar o ranking: rótulo completo, cabeçalho curto da coluna e formatação (só o número;
+   a unidade vai no cabeçalho). Chaves = colunas dos dados. */
+const METRICS = {
+  rating:                  {label: 'Rating geral',            head: 'Rating',    f: v => fmt(v, 1)},
+  games_last_5_avg_rating: {label: 'Rating últimos 5 jogos',  head: 'Últ. 5',    f: v => fmt(v, 1)},
+  goals:                   {label: 'Gols',                    head: 'Gols',      f: v => fmt(v)},
+  assists:                 {label: 'Assistências',            head: 'Assist.',   f: v => fmt(v)},
+  tackles:                 {label: 'Desarmes',                head: 'Desarmes',  f: v => fmt(v)},
+  clearances:              {label: 'Cortes',                  head: 'Cortes',    f: v => fmt(v)},
+  shots_total:             {label: 'Chutes totais',           head: 'Chutes',    f: v => fmt(v)},
+  shots_on_target:         {label: 'Chutes no alvo',          head: 'No alvo',   f: v => fmt(v)},
+  shot_accuracy_pct:       {label: 'Precisão de chute',       head: 'Chute %',   f: v => fmt(v, 1)},
+  passes_total:            {label: 'Passes totais',           head: 'Passes',    f: v => fmt(v)},
+  passes_completed:        {label: 'Passes certos',           head: 'Certos',    f: v => fmt(v)},
+  pass_accuracy_pct:       {label: 'Precisão de passe',       head: 'Passe %',   f: v => fmt(v, 1)},
+  height_cm:               {label: 'Altura',                  head: 'Altura m',  f: v => fmt(v / 100, 2)},
+  weight_kg:               {label: 'Peso',                    head: 'Peso kg',   f: v => fmt(v)},
+  age:                     {label: 'Idade',                   head: 'Idade',     f: v => fmt(v)},
+  market_value_millions:   {label: 'Valor de mercado',        head: 'Valor mi',  f: v => fmt(v, 1)}
+};
+const METRIC_MAX = Object.fromEntries(Object.keys(METRICS).map(k => [k, Math.max(...PLAYERS.map(pl => pl[k])) || 1]));
+/* atributos de clicabilidade (usado nos cards da direita): quem tem data-metric ordena o ranking */
+const mAttr = (key, svg = false) => `data-metric="${key}" role="button" tabindex="0"${svg ? '' : ` title="Ordenar o ranking por: ${METRICS[key].label}"`}`;
+
+/* filtros: posições agrupadas (ataque/meio/defesa/goleiro) e clubes — cumulativos dentro de cada grupo (união);
+   posição E clube E busca precisam bater ao mesmo tempo */
+const POS_GROUPS = {
+  ataque:  ['FW', 'LW', 'RW'],
+  meio:    ['CM'],
+  defesa:  ['CB', 'LB', 'RB'],
+  goleiro: ['GK']
+};
+const CLUBS = [...new Set(PLAYERS.map(pl => pl.club_name))].sort((a, b) => a.localeCompare(b, 'pt-BR'));
+const state = { selected: RANKED[0].player_id, query: '', metric: 'rating', groups: new Set(), clubs: new Set() };
+const isFiltered = () => state.query.trim() !== '' || state.groups.size > 0 || state.clubs.size > 0;
+
+/* lista atual: filtrada e ordenada pela métrica escolhida (maior → menor; empate pelo rating geral) */
+function currentView(groups = state.groups, clubs = state.clubs){
+  const q = norm(state.query.trim()), m = state.metric;
+  const posOk = (pl) => !groups.size || [...groups].some(g => POS_GROUPS[g].includes(pl.position));
+  return RANKED
+    .filter(pl => (!q || pl.searchKey.includes(q)) && posOk(pl) && (!clubs.size || clubs.has(pl.club_name)))
+    .sort((a, b) => b[m] - a[m] || b.rating - a.rating || a.rank - b.rank);
+}
+
+/* ===== JS: render — ranking (pódio + lista) ===== */
+function renderPodium(view){
+  const M = METRICS[state.metric];
+  const crown = '<svg class="crown" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 8l4.5 4L12 5l4.5 7L21 8l-2 10H5z"/></svg>';
+  $('#podium').innerHTML = view.slice(0, 3).map((p, i) => {
+    const n = i + 1, v = M.f(p[state.metric]);
+    return `
+    <button class="podium p${n} ${p.player_id === state.selected ? 'selected' : ''}" data-id="${p.player_id}" aria-label="${n}º ${p.player_name}, ${M.label} ${v}">
+      ${n === 1 ? crown : ''}
+      ${avatar(p, n === 1 ? 'lg' : 'md')}
+      <span class="who">
+        <span class="name">${p.player_name}</span>
+        <span class="label">${p.club_name}</span>
+        <span class="rating ${v.length >= 5 ? 'long' : ''}">${v}</span>
+      </span>
+      <span class="plinth">${n}</span>
+    </button>`;
+  }).join('');
+}
+
+function renderList(view){
+  const M = METRICS[state.metric], max = METRIC_MAX[state.metric];
+  const rows = view.slice(3);
+  if (!view.length){
+    $('#list').innerHTML = `<div class="empty">Nenhum jogador encontrado com os filtros atuais.</div>`;
+    return;
+  }
+  $('#list').innerHTML = rows.map((p, i) => `
+    <button class="row ${p.player_id === state.selected ? 'selected' : ''}" data-id="${p.player_id}" role="listitem">
+      <span class="pos">${i + 4}</span>
+      ${avatar(p, 'sm')}
+      <span class="who">
+        <span class="name">${p.player_name}</span>
+        <span class="label meta">${p.club_name} · ${POSITION_LABELS[p.position]}</span>
+      </span>
+      <span class="value"><span class="bar"><i class="w${Math.round(p[state.metric] / max * 20) * 5}"></i></span>${M.f(p[state.metric])}</span>
+    </button>`).join('');
+}
+
+function renderRanking(animate = false){
+  const view = currentView(), M = METRICS[state.metric];
+  $('#metric-head').textContent = M.head;
+  renderPodium(view);
+  renderList(view);
+  $('#list').scrollTop = 0;
+  if (animate){
+    ['#podium', '#list'].forEach(sel => { const el = $(sel); el.classList.remove('reorder'); void el.offsetWidth; el.classList.add('reorder'); });
+  }
+}
+
+/* ===== JS: render — ficha técnica ===== */
+function niceTicks(min, max, count = 4){
+  const raw = (max - min || Math.abs(max) || 1) / count;
+  const mag = 10 ** Math.floor(Math.log10(raw));
+  const step = [1, 2, 2.5, 5, 10].map(k => k * mag).find(st => st >= raw);
+  const lo = Math.floor(min / step) * step, hi = Math.ceil(max / step) * step;
+  const ticks = [];
+  for (let v = lo; v <= hi + step / 2; v += step) ticks.push(+v.toFixed(6));
+  return {lo, hi: ticks.at(-1), step, ticks};
+}
+let MV_PTS = null;   // pontos (px) do último gráfico de valor desenhado
+function marketChart(hist){
+  const W = 334, H = 196, L = 46, R = 12, T = 18, B = 40;
+  const vals = hist.map(h => h[1]);
+  const {lo, hi, step, ticks} = niceTicks(Math.min(...vals), Math.max(...vals));
+  const x = i => L + 18 + i * (W - L - R - 30) / Math.max(1, hist.length - 1);
+  const y = v => T + (1 - (v - lo) / (hi - lo || 1)) * (H - T - B);
+  const pts = hist.map((h, i) => [x(i), y(h[1])]);
+  const line = pts.map((p, i) => (i ? 'L' : 'M') + p[0].toFixed(1) + ' ' + p[1].toFixed(1)).join(' ');
+  const base = H - B;
+  const area = `${line} L${pts.at(-1)[0].toFixed(1)} ${base} L${pts[0][0].toFixed(1)} ${base} Z`;
+  const dec = step < 1 ? 1 : 0;
+  const last = pts.length - 1;
+  MV_PTS = pts;
+  return `<svg class="chart" data-base="${base}" data-w="${W}" viewBox="0 0 ${W} ${H}" role="img" aria-label="Valor de mercado por período de registro">
+    <defs><linearGradient id="mvFill" x1="0" y1="0" x2="0" y2="1"><stop offset="0" class="stop-a"/><stop offset="1" class="stop-b"/></linearGradient></defs>
+    ${ticks.map(v => `<line class="gridline" x1="${L}" x2="${W - R}" y1="${y(v).toFixed(1)}" y2="${y(v).toFixed(1)}"/>
+    <text class="ytick" x="${L - 6}" y="${(y(v) + 3).toFixed(1)}" text-anchor="end">${fmt(v, dec)}</text>`).join('')}
+    <line class="axisline" x1="${L}" x2="${L}" y1="${T - 6}" y2="${base}"/>
+    <line class="axisline" x1="${L}" x2="${W - R}" y1="${base}" y2="${base}"/>
+    <path class="area" d="${area}"/>
+    <path class="line" d="${line}"/>
+    ${pts.map((p, i) => `<circle class="mark ${i === last ? 'last' : ''}" cx="${p[0].toFixed(1)}" cy="${p[1].toFixed(1)}" r="${i === last ? 4.5 : 3.5}"><title>${period(hist[i][0], true)}: ${fmt(hist[i][1], 1)} mi</title></circle>
+    <text class="val ${i === last ? 'last' : ''}" x="${p[0].toFixed(1)}" y="${(p[1] - 9).toFixed(1)}" text-anchor="middle">${fmt(hist[i][1], 1)}</text>
+    <text class="tick" x="${p[0].toFixed(1)}" y="${base + 14}" text-anchor="middle">${period(hist[i][0])}</text>`).join('')}
+    <text class="atitle" x="${(L + W - R) / 2}" y="${H - 4}" text-anchor="middle">Período de registro</text>
+    <text class="atitle" transform="translate(10 ${(T + base) / 2}) rotate(-90)" text-anchor="middle">Valor (mi)</text>
+    ${pts.map((p, i) => `<circle class="hit" data-i="${i}" data-label="${period(hist[i][0], true)}" data-v="${fmt(hist[i][1], 1)}" cx="${p[0].toFixed(1)}" cy="${p[1].toFixed(1)}" r="11"/>`).join('')}
+    <g class="mv-tip" aria-hidden="true"><rect class="tip-bg" width="96" height="38" rx="9"/><text class="tip-p" x="48" y="15" text-anchor="middle"></text><text class="tip-v" x="48" y="30" text-anchor="middle"></text></g>
+  </svg>`;
+}
+function renderProfile(p){
+  const hist = MARKET_HISTORY[p.player_id] || [];
+  const cur = hist.length ? hist.at(-1)[1] : p.market_value_millions;
+  const prev = hist.length > 1 ? hist.at(-2) : null;
+  let delta = '<span class="chip">Sem histórico</span>';
+  if (prev){
+    const diff = cur - prev[1], pct = diff / prev[1] * 100;
+    if (Math.abs(diff) < 0.05) delta = `<span class="chip">= Estável</span>`;
+    else delta = `<span class="chip ${diff > 0 ? 'up' : 'down'}">${diff > 0 ? '▲ Valorizou' : '▼ Desvalorizou'} ${fmt(Math.abs(pct),1)}%</span>`;
+    delta += `<span class="label">vs ${period(prev[0], true)} · ${diff >= 0 ? '+' : '−'}${fmt(Math.abs(diff),1)} mi</span>`;
+  }
+
+  $('#profile').innerHTML = `
+    <div class="card-head"><span class="label">Ficha técnica</span></div>
+    <div class="card-body scroll">
+      <div class="id">
+        ${avatar(p, 'md')}
+        <div>
+          <div class="id-name">${p.player_name}</div>
+          <div class="phys"><span ${mAttr('height_cm')}><b>${fmt(p.height_cm / 100, 2)}</b>m</span><span ${mAttr('weight_kg')}><b>${p.weight_kg}</b>kg</span><span ${mAttr('age')}><b>${p.age}</b>anos</span></div>
+          <div class="id-sub muted">${p.nationality}</div>
+        </div>
+      </div>
+
+      <div class="club">
+          ${crest(p.club_name)}
+          <div class="who"><div class="name">${p.club_name}</div><div class="muted">${POSITION_LABELS[p.position]}</div></div>
+        </div>
+
+        <div class="market">
+          <span class="label">Valor de mercado</span>
+          <div class="market-top">
+            <div class="market-value" ${mAttr('market_value_millions')}>${fmt(cur,1)}<small>mi</small></div>
+            <div class="market-delta">${delta}</div>
+          </div>
+          ${hist.length > 1 ? marketChart(hist) : ''}
+        </div>
+    </div>`;
+  const svg = $('#profile .chart');
+  if (svg) tweenPts('mv', padFrom(TWEENS.mv && TWEENS.mv.cur, MV_PTS), MV_PTS, P => applyMarket(svg, P));
+  else TWEENS.mv = null;
+}
+
+/* ===== JS: render — perfil de desempenho ===== */
+function metric(label, value, unit = '', pct = null, hl = false, key = null){
+  return `<div class="metric ${hl ? 'hl' : ''}" ${key ? mAttr(key) : ''}><span class="label">${label}</span><span class="v">${value}${unit ? `<small>${unit}</small>` : ''}</span>${pct !== null ? `<span class="bar"><i class="w${Math.round(pct / 5) * 5}"></i></span>` : ''}</div>`;
+}
+
+// radar estilo "cartinha de game": cada eixo escalado pelo maior valor do campeonato
+const RADAR_STATS = [
+  ['goals', 'Gols'],
+  ['shots_on_target', 'Finaliz.'],
+  ['tackles', 'Desarmes'],
+  ['clearances', 'Cortes'],
+  ['passes_completed', 'Passes'],
+  ['assists', 'Assist.']
+];
+function radarMax(key){ return Math.max(...PLAYERS.map(pl => pl[key])) || 1; }
+function radarChart(p){
+  const W = 334, H = 262, cx = W / 2, cy = 126, R = 82;
+  const n = RADAR_STATS.length;
+  const ang = i => (-90 + i * 360 / n) * Math.PI / 180;
+  const pt = (i, r) => [cx + Math.cos(ang(i)) * r, cy + Math.sin(ang(i)) * r];
+  const poly = r => RADAR_STATS.map((_, i) => pt(i, r).map(v => v.toFixed(1)).join(',')).join(' ');
+  const ratios = RADAR_STATS.map(([k]) => Math.min(1, p[k] / radarMax(k)));
+  const shape = ratios.map((v, i) => pt(i, R * Math.max(v, .03)).map(c => c.toFixed(1)).join(',')).join(' ');
+  const labels = RADAR_STATS.map(([k, name], i) => {
+    const [x, y] = pt(i, R + 26);
+    const c = Math.cos(ang(i));
+    const anchor = c > .3 ? 'start' : c < -.3 ? 'end' : 'middle';
+    const dy = Math.sin(ang(i)) < -.9 ? -6 : Math.sin(ang(i)) > .9 ? 4 : -2;
+    const hw = 66, hx = anchor === 'start' ? x - 6 : anchor === 'end' ? x - hw + 6 : x - hw / 2;
+    return `<g class="rg" ${mAttr(k, true)}><title>Ordenar o ranking por: ${METRICS[k].label}</title>
+      <rect class="hit" x="${hx.toFixed(1)}" y="${(y + dy - 14).toFixed(1)}" width="${hw}" height="36" rx="8"/>
+      <text class="rl" x="${x.toFixed(1)}" y="${(y + dy).toFixed(1)}" text-anchor="${anchor}">${name}</text>
+      <text class="rv ${ratios[i] >= .75 ? 'top' : ''}" x="${x.toFixed(1)}" y="${(y + dy + 15).toFixed(1)}" text-anchor="${anchor}">${fmt(p[k])}</text></g>`;
+  }).join('');
+  return `<svg class="radar" viewBox="0 0 ${W} ${H}" role="img" aria-label="Radar de atributos de ${p.player_name}">
+    ${[.25, .5, .75, 1].map(r => `<polygon class="ring ${r === 1 ? 'outer' : ''}" points="${poly(R * r)}"/>`).join('')}
+    ${RADAR_STATS.map((_, i) => { const [x, y] = pt(i, R); return `<line class="spoke" x1="${cx}" y1="${cy}" x2="${x.toFixed(1)}" y2="${y.toFixed(1)}"/>`; }).join('')}
+    <polygon class="shape" points="${shape}"/>
+    ${ratios.map((v, i) => { const [x, y] = pt(i, R * Math.max(v, .03)); return `<circle class="vtx" cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="3.2"><title>${RADAR_STATS[i][1]}: ${fmt(p[RADAR_STATS[i][0]])} (${Math.round(v * 100)}% do maior do campeonato)</title></circle>`; }).join('')}
+    ${labels}
+  </svg>`;
+}
+
+// faixas de cor por métrica (baixa < lo ≤ média < hi ≤ alta), calibradas pela distribuição do campeonato
+const ACCURACY_BANDS = { shot: [30, 45], pass: [80, 86] };
+function gauge(label, pct, [lo, hi], key){
+  const lv = pct < lo ? 'low' : pct < hi ? 'mid' : 'high';
+  const word = {low: 'Baixa', mid: 'Média', high: 'Alta'}[lv];
+  const cx = 85, cy = 78, r = 62;
+  const P = v => { const t = Math.PI * (1 - Math.max(0, Math.min(100, v)) / 100); return [cx + r * Math.cos(t), cy - r * Math.sin(t)]; };
+  const arc = (a, b) => { const [x1, y1] = P(a), [x2, y2] = P(b); return `M${x1.toFixed(1)} ${y1.toFixed(1)} A${r} ${r} 0 0 1 ${x2.toFixed(1)} ${y2.toFixed(1)}`; };
+  const [nx, ny] = (() => { const t = Math.PI * (1 - pct / 100); return [cx + (r - 18) * Math.cos(t), cy - (r - 18) * Math.sin(t)]; })();
+  return `<div class="gauge" ${mAttr(key)}>
+    <span class="label">${label}</span>
+    <svg viewBox="0 0 170 108" role="img" aria-label="${label}: ${fmt(pct,1)}%, ${word.toLowerCase()}">
+      <path class="seg lv-low" d="${arc(0, lo)}"/>
+      <path class="seg lv-mid" d="${arc(lo, hi)}"/>
+      <path class="seg lv-high" d="${arc(hi, 100)}"/>
+      ${pct > 0 ? `<path class="arc lv-${lv}" d="${arc(0, pct)}"/>` : ''}
+      <line class="needle" x1="${cx}" y1="${cy}" x2="${nx.toFixed(1)}" y2="${ny.toFixed(1)}"/>
+      <circle class="hub" cx="${cx}" cy="${cy}" r="4"/>
+      <text class="gt" x="${cx - r}" y="${cy + 16}" text-anchor="middle">0</text>
+      <text class="gt" x="${cx + r}" y="${cy + 16}" text-anchor="middle">100</text>
+      <text class="gv lv-${lv}" x="${cx}" y="${cy + 26}" text-anchor="middle">${fmt(pct,1)}<tspan class="gv-u">%</tspan></text>
+    </svg>
+  </div>`;
+}
+
+function renderPerformance(p){
+  const ratios = RADAR_STATS.map(([k]) => [Math.min(1, p[k] / radarMax(k))]);
+  const form = p.games_last_5_avg_rating;
+  const trend = form > p.rating ? ['up','▲'] : form < p.rating ? ['down','▼'] : ['','='];
+  $('#performance').innerHTML = `
+    <div class="card-head"><span class="label">Perfil de desempenho</span></div>
+    <div class="card-body scroll">
+      <div class="hero" ${mAttr('rating')}>
+        <span class="hero-value">${fmt(p.rating,1)}</span>
+        <div class="hero-info">
+          <span class="label">Rating geral</span>
+          <span class="bar"><i class="w${Math.round(p.rating / RATING_MAX * 20) * 5}"></i></span>
+          <div class="hero-foot"><span class="muted">#${p.rank} de ${RANKED.length}</span><span class="chip ${trend[0]}" ${mAttr('games_last_5_avg_rating')}>${trend[1]} Últ. 5: ${fmt(form,1)}</span></div>
+        </div>
+      </div>
+
+      <div class="section">
+        <span class="label">Atributos</span>
+        ${radarChart(p)}
+        <span class="label caption">Escala: maior valor do campeonato</span>
+      </div>
+
+      <div class="section">
+        <span class="label">Finalização</span>
+        <div class="trio">
+          ${metric('Chutes totais', p.shots_total, '', null, false, 'shots_total')}
+          ${metric('Chutes no alvo', p.shots_on_target, '', null, false, 'shots_on_target')}
+          ${gauge('Precisão', p.shot_accuracy_pct, ACCURACY_BANDS.shot, 'shot_accuracy_pct')}
+        </div>
+      </div>
+
+      <div class="section">
+        <span class="label">Passe</span>
+        <div class="trio">
+          ${metric('Passes totais', fmt(p.passes_total), '', null, false, 'passes_total')}
+          ${metric('Passes certos', fmt(p.passes_completed), '', null, false, 'passes_completed')}
+          ${gauge('Precisão', p.pass_accuracy_pct, ACCURACY_BANDS.pass, 'pass_accuracy_pct')}
+        </div>
+      </div>
+    </div>`;
+  const svg = $('#performance .radar');
+  tweenPts('radar', TWEENS.radar && TWEENS.radar.cur, ratios, P => applyRadar(svg, P.map(v => v[0])));
+}
+
+/* ===== JS: dados SIMULADOS (heatmap + pênaltis) =====
+   Os CSVs não trazem posicionamento em campo nem cobranças de pênalti.
+   Estes geradores são determinísticos (mesma saída para o mesmo jogador) e derivam
+   da posição/posições secundárias e dos gols. Substituir quando houver dados reais. */
+function rng(seed){ // mulberry32
+  return function(){
+    seed |= 0; seed = seed + 0x6D2B79F5 | 0;
+    let t = Math.imul(seed ^ seed >>> 15, 1 | seed);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+// focos de presença por posição: [x (0 = própria meta → 1 = meta adversária), y (0 = esquerda → 1 = direita), peso, sx, sy]
+const ZONES = {
+  GK:[[.06,.5,1,.04,.12],[.15,.5,.25,.05,.15]],
+  CB:[[.22,.5,1,.09,.2],[.4,.5,.35,.1,.2]],
+  LB:[[.32,.12,1,.14,.08],[.62,.1,.6,.14,.08],[.2,.25,.35,.08,.1]],
+  RB:[[.32,.88,1,.14,.08],[.62,.9,.6,.14,.08],[.2,.75,.35,.08,.1]],
+  CM:[[.5,.5,1,.13,.18],[.35,.45,.5,.1,.18],[.68,.55,.5,.1,.18]],
+  LW:[[.72,.13,1,.13,.08],[.88,.3,.55,.06,.1],[.5,.15,.4,.1,.08]],
+  RW:[[.72,.87,1,.13,.08],[.88,.7,.55,.06,.1],[.5,.85,.4,.1,.08]],
+  FW:[[.86,.5,1,.07,.15],[.7,.5,.5,.1,.18],[.93,.5,.45,.04,.1]]
+};
+const HEAT_COLS = 16, HEAT_ROWS = 24;  // campo em pé: colunas = largura, linhas = comprimento
+function presenceData(p){
+  const r = rng(p.player_id * 31 + 7);
+  const foci = [];
+  const add = (pos, k) => (ZONES[pos] || []).forEach(([x, y, w, sx, sy]) =>
+    foci.push([x + (r() - .5) * .08, y + (r() - .5) * .08, w * k, sx, sy]));
+  add(p.position, 1);
+  (p.secondary_positions || '').split(';').filter(Boolean).forEach(pos => add(pos, .35));
+  const grid = [];
+  let max = 0;
+  for (let j = 0; j < HEAT_ROWS; j++) for (let i = 0; i < HEAT_COLS; i++){
+    const cx = 1 - (j + .5) / HEAT_ROWS, cy = (i + .5) / HEAT_COLS;  // linha 0 = gol adversário (fundo)
+    let v = foci.reduce((acc, [x, y, w, sx, sy]) => acc + w * Math.exp(-(((cx - x) / sx) ** 2 + ((cy - y) / sy) ** 2) / 2), 0);
+    v += r() * .06;
+    grid.push([i, j, v]); max = Math.max(max, v);
+  }
+  grid.forEach(c => c[2] /= max);
+  return grid;
+}
+function penaltyData(p){
+  const r = rng(p.player_id * 17 + 3);
+  if (p.position === 'GK') return [];
+  const share = {FW:.45, LW:.3, RW:.3, CM:.28}[p.position] ?? .06;
+  let taken = Math.min(8, Math.round(p.goals * share * (.6 + r() * .8)));
+  if (!taken && r() < share) taken = 1;
+  const pick = (w) => { let x = r() * w.reduce((a, b) => a + b), i = 0; while ((x -= w[i]) > 0) i++; return i; };
+  let scored = 0;
+  return Array.from({length: taken}, () => {
+    const col = pick([.4, .2, .4]), row = pick([.35, .65]);
+    let result = r() < .78 ? 'gol' : (r() < .6 ? 'def' : 'fora');
+    if (result === 'gol' && scored >= p.goals) result = 'def';
+    if (result === 'gol') scored++;
+    return {col, row, result, jx: r(), jy: r()};
+  });
+}
+
+/* ===== JS: elementos 3D (campo e goleira) — código dos arquivos em elementos/ ===== */
+const C3_STOPS=[[43,101,214],[56,217,138],[245,206,59],[224,72,63]];
+function c3Cor(w){                          /* frio (pouca presença) -> quente (muita) */
+  const t=Math.max(0,Math.min(1,w))*(C3_STOPS.length-1);
+  const i=Math.min(C3_STOPS.length-2,Math.floor(t)), f=t-i;
+  const a=C3_STOPS[i], b=C3_STOPS[i+1];
+  return `rgb(${Math.round(a[0]+(b[0]-a[0])*f)},${Math.round(a[1]+(b[1]-a[1])*f)},${Math.round(a[2]+(b[2]-a[2])*f)})`;
+}
+function c3Op(w){                           /* smoothstep: 0 abaixo do piso, 1 acima do teto */
+  const lo=0.10, hi=0.55;
+  const t=Math.max(0,Math.min(1,(w-lo)/(hi-lo)));
+  return t*t*(3-2*t)*0.94;
+}
+
+const C3_HTML=`
+<div class="c3-sombra"></div>
+<div class="c3-flutua"><div class="c3-cena">
+  <div class="c3-topo">
+    <div class="c3-pista">
+      <div class="c3-calor"></div>
+      <div class="c3-brilho"></div>
+    </div>
+    <div class="c3-linhas">
+      <i class="borda"></i><i class="meio"></i><i class="circulo"></i>
+      <i class="area n"></i><i class="area s"></i>
+      <i class="pequena n"></i><i class="pequena s"></i>
+      <i class="ponto centro"></i><i class="ponto pn"></i><i class="ponto ps"></i>
+      <i class="canto no"></i><i class="canto ne"></i><i class="canto so"></i><i class="canto se"></i>
+    </div>
+    <div class="c3-sombra-gol n"></div>
+    <div class="c3-sombra-gol s"></div>
+  </div>
+  <div class="c3-lado s"></div>
+  <div class="c3-lado o"></div>
+  <div class="c3-gol n"></div>
+  <div class="c3-gol s"></div>
+</div></div>
+<div class="c3-poeira"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>`;
+
+function campo3D(el, opts){
+  const o = Object.assign({ cols:16, rows:24 }, opts||{});
+  el.innerHTML = C3_HTML;
+  const topo   = el.querySelector('.c3-topo');
+  const calor  = el.querySelector('.c3-calor');
+  const brilhoRule = dynRule('.campo3d .c3-brilho');
+
+  return {
+    /* grade: array de o.cols*o.rows intensidades 0..1, varrendo linha a linha */
+    pintar(grade){
+      const g = grade || [];
+      const cw = 100/o.cols, ch = 100/o.rows;
+      let pico=0, px=50, py=50, html='';
+      for(let i=0;i<g.length;i++){
+        const w=g[i], c=i%o.cols, r=Math.floor(i/o.cols);
+        if(w>pico){ pico=w; px=(c+0.5)*cw; py=(r+0.5)*ch; }
+        const op=c3Op(w);
+        if(op<=0.01) continue;
+        /* +0.9% no tamanho: as células se sobrepõem de leve e o blur não deixa
+           aparecer a malha da grade entre elas */
+        html+=`<rect x="${(c*cw).toFixed(2)}" y="${(r*ch).toFixed(2)}" width="${(cw+0.9).toFixed(2)}" height="${(ch+0.9).toFixed(2)}" fill="${c3Cor(w)}" opacity="${op.toFixed(2)}"/>`;
+      }
+      calor.innerHTML = `<svg class="c3-calor-svg" viewBox="0 0 100 100" preserveAspectRatio="none">${html}</svg>`;
+      brilhoRule.style.setProperty('left', px.toFixed(1)+'%');
+      brilhoRule.style.setProperty('top', py.toFixed(1)+'%');
+      brilhoRule.style.setProperty('background', `radial-gradient(circle, ${c3Cor(pico)} 0%, transparent 70%)`);
+      brilhoRule.style.setProperty('opacity', (0.20+0.32*pico).toFixed(2));
+      topo.classList.remove('trocando'); void topo.offsetWidth; topo.classList.add('trocando');
+    },
+    destruir(){ el.innerHTML=''; }
+  };
+}
+
+
+function goleiraCard(canvas, opts){
+  const o   = Object.assign({ vento:0.6, grama:1 }, opts||{});
+  const ctx = canvas.getContext('2d');
+
+  /* --- medidas oficiais da baliza (m) + profundidade da rede ------------- */
+  const GW=7.32, GH=2.44, HW=GW/2, DEEP=1.95;
+  const EYE=o.olho||[-3.05,1.70,7.55], TGT=o.alvo||[0.05,1.00,-0.55];
+  const WDX=0.93, WDZ=0.37;                       // direção do vento no plano do chão
+
+  /* --- câmera fixa: base ortonormal + projeção pinhole ------------------- */
+  const sub=(a,b)=>[a[0]-b[0],a[1]-b[1],a[2]-b[2]];
+  const cross=(a,b)=>[a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[0]];
+  const norm=a=>{ const l=Math.hypot(a[0],a[1],a[2])||1; return [a[0]/l,a[1]/l,a[2]/l]; };
+  const FWD=norm(sub(TGT,EYE)), RGT=norm(cross(FWD,[0,1,0])), UPV=cross(RGT,FWD);
+  let F=1, CX=0, CY=0, W=0, H=0, DPR=1;
+
+  function proj(x,y,z){
+    const dx=x-EYE[0], dy=y-EYE[1], dz=z-EYE[2];
+    const d = dx*FWD[0]+dy*FWD[1]+dz*FWD[2];      // profundidade
+    const s = F/(d>0.15?d:0.15);
+    return [ CX + (dx*RGT[0]+dy*RGT[1]+dz*RGT[2])*s,
+             CY - (dx*UPV[0]+dy*UPV[1]+dz*UPV[2])*s, d ];
+  }
+
+  /* --- vento: soma de senos + rajada lenta ------------------------------- */
+  function vento(x,z,t){
+    const s = 0.55*Math.sin(0.55*x + 0.30*z - 1.45*t)
+            + 0.30*Math.sin(0.90*x - 0.42*z - 2.30*t + 1.7)
+            + 0.15*Math.sin(1.70*x + 0.60*z - 3.40*t + 4.1);
+    const rajada = 0.58 + 0.42*Math.sin(t*0.41)*Math.sin(t*0.26+1.1);
+    return s*rajada;
+  }
+
+  /* --- perfil da rede: [z/DEEP, y/GH] do travessão até a barra do chão --- */
+  const PROF=[[0,1],[0.30,0.982],[0.52,0.885],[0.70,0.700],[0.85,0.440],[0.95,0.200],[1,0]];
+  function perfil(v){
+    const f=Math.min(Math.max(v,0),1)*(PROF.length-1), i=Math.min(Math.floor(f),PROF.length-2), k=f-i;
+    return [ -DEEP*(PROF[i][0]+(PROF[i+1][0]-PROF[i][0])*k),
+              GH  *(PROF[i][1]+(PROF[i+1][1]-PROF[i][1])*k) ];
+  }
+
+  /* --- grama: sorteada em espaço de TELA e projetada de volta no chão ---
+     As lâminas são agrupadas por cor+espessura: o desenho vira ~20 stroke()
+     por quadro em vez de um por lâmina.                                    */
+  const TONS=['#16351d','#1c4023','#234c29','#2a5931','#33693a'], LARG=[0.8,1.4,2.2,3.2];
+  let grupos=[], horY=0;
+  function noChao(sx, sy){                                   // raio da tela → plano y=0
+    const a=(sx-CX)/F, b=-(sy-CY)/F;
+    const dy = FWD[1] + a*RGT[1] + b*UPV[1];
+    if(dy > -1e-4) return null;                              // acima do horizonte
+    const k = -EYE[1]/dy;
+    if(k > 27) return null;                                  // longe demais para render lâmina
+    return [ EYE[0] + k*(FWD[0]+a*RGT[0]+b*UPV[0]), EYE[2] + k*(FWD[2]+a*RGT[2]+b*UPV[2]), k ];
+  }
+  function semear(){
+    horY = proj(0,0,-900)[1];
+    grupos = TONS.flatMap(c => LARG.map(l => ({ cor:c, lw:l*DPR, atras:[], frente:[] })));
+    const y0 = Math.max(horY+2, 0), faixa = (H+14) - y0;
+    if(faixa <= 0) return;
+    const alvo = Math.round(Math.min(2200, (W+20)*faixa/(52*DPR*DPR)) * o.grama);
+    let seed=20260804, feitas=0, tent=0;
+    const rnd=()=>{ seed=(seed*1664525+1013904223)>>>0; return seed/4294967296; };
+    while(feitas < alvo && tent++ < alvo*8){
+      const g = noChao(-10 + rnd()*(W+20), y0 + rnd()*faixa);
+      if(!g) continue;
+      feitas++;
+      const k = g[2];
+      const lam = {
+        x:g[0], z:g[1],
+        h:(0.040 + rnd()*0.055)*Math.min(1.85, 1 + 0.036*k),
+        rig: 0.55 + rnd()*0.85,
+        fase: rnd()*6.28,
+        pend: (rnd()-0.5)*0.55                               // inclinação de repouso
+      };
+      let ti = Math.round(rnd()*4);
+      if(k > 11) ti = Math.max(0, ti-1);                     // ao longe, tons mais fechados
+      const px = (0.011 + rnd()*0.010)*F/k;                  // espessura projetada
+      const li = px<1.1 ? 0 : px<1.8 ? 1 : px<2.8 ? 2 : 3;
+      const gr = grupos[ti*LARG.length + li];
+      (lam.z < -0.05 ? gr.atras : gr.frente).push(lam);
+    }
+  }
+
+  /* --- gramado: faixas de corte convergindo no horizonte ----------------- */
+  function chao(){
+    const hor = proj(0,0,-900)[1];
+    const g = ctx.createLinearGradient(0,hor,0,H);
+    g.addColorStop(0,'#152d1c'); g.addColorStop(0.32,'#1d4325'); g.addColorStop(0.70,'#20492a'); g.addColorStop(1,'#22502d');
+    ctx.fillStyle=g; ctx.fillRect(0,hor,W,H-hor);
+    for(let i=-8;i<8;i++){
+      if(i%2) continue;
+      const a=proj(i*1.85,0,-60), b=proj(i*1.85+1.85,0,-60), c=proj(i*1.85+1.85,0,5.4), d=proj(i*1.85,0,5.4);
+      ctx.fillStyle='rgba(255,255,255,.022)';
+      ctx.beginPath(); ctx.moveTo(a[0],a[1]); ctx.lineTo(b[0],b[1]); ctx.lineTo(c[0],c[1]); ctx.lineTo(d[0],d[1]); ctx.closePath(); ctx.fill();
+    }
+    // linha de fundo
+    ctx.strokeStyle='rgba(255,255,255,.16)'; ctx.lineWidth=Math.max(1,1.6*DPR);
+    const l0=proj(-11,0.005,0), l1=proj(11,0.005,0);
+    ctx.beginPath(); ctx.moveTo(l0[0],l0[1]); ctx.lineTo(l1[0],l1[1]); ctx.stroke();
+    // sombra suave sob a baliza
+    const c=proj(0,0,-DEEP*0.45), r=(proj(HW+0.7,0,-DEEP*0.45)[0]-proj(-HW-0.7,0,-DEEP*0.45)[0])*0.5;
+    const sg=ctx.createRadialGradient(c[0],c[1],0,c[0],c[1],r);
+    sg.addColorStop(0,'rgba(0,0,0,.42)'); sg.addColorStop(0.6,'rgba(0,0,0,.18)'); sg.addColorStop(1,'rgba(0,0,0,0)');
+    ctx.save(); ctx.translate(c[0],c[1]); ctx.scale(1,0.19); ctx.translate(-c[0],-c[1]);
+    ctx.fillStyle=sg; ctx.beginPath(); ctx.arc(c[0],c[1],r,0,6.2832); ctx.fill(); ctx.restore();
+  }
+
+  /* --- grama: curva quadrática por lâmina, ponta puxada pelo vento ------- */
+  function grama(t, campo){
+    ctx.lineCap='round';
+    for(const g of grupos){
+      const lista = g[campo];
+      if(!lista.length) continue;
+      ctx.strokeStyle = g.cor; ctx.lineWidth = g.lw;
+      ctx.beginPath();
+      for(const b of lista){
+        const w  = vento(b.x, b.z, t + b.fase*0.05)*o.vento/b.rig;
+        const dx = (WDX*w + b.pend)*b.h*0.85, dz = (WDZ*w + b.pend*0.4)*b.h*0.85;
+        const hy = b.h*(0.98 - 0.22*Math.abs(w));
+        const p0 = proj(b.x, 0, b.z);
+        const p1 = proj(b.x+dx*0.30, hy*0.58, b.z+dz*0.30);
+        const p2 = proj(b.x+dx, hy, b.z+dz);
+        ctx.moveTo(p0[0], p0[1]);
+        ctx.quadraticCurveTo(p1[0], p1[1], p2[0], p2[1]);
+      }
+      ctx.stroke();
+    }
+  }
+
+  /* --- rede: grades projetadas, deslocadas por um "bojo" × vento --------- */
+  const NU=23, NV=13, SU=10, SV=9;
+  const gridFundo=[], gridLat=[[],[]];
+  function malha(t){
+    const amp = 0.30*o.vento;
+    for(let j=0;j<NV;j++){                                   // painel do fundo
+      const v=j/(NV-1), pr=perfil(v);
+      for(let i=0;i<NU;i++){
+        const u=i/(NU-1), x=-HW+GW*u;
+        const bojo = Math.sin(Math.PI*u)*Math.sin(Math.PI*Math.min(v*1.12,1));
+        const w = vento(x, pr[0], t)*amp*bojo;
+        gridFundo[j*NU+i] = proj(x + w*0.30, pr[1] + w*0.22, pr[0] + w*0.92);
+      }
+    }
+    for(let s=0;s<2;s++){                                    // painéis laterais
+      const sx = s? HW : -HW;
+      for(let i=0;i<SU;i++){
+        const v=i/(SU-1), pr=perfil(v);
+        for(let j=0;j<SV;j++){
+          const f=j/(SV-1), y=pr[1]*f;
+          const bojo = Math.sin(Math.PI*v)*Math.sin(Math.PI*f);
+          const w = vento(sx, pr[0], t)*amp*bojo*0.8;
+          gridLat[s][i*SV+j] = proj(sx + w*(s?0.95:-0.95), y + w*0.10, pr[0] + w*0.20);
+        }
+      }
+    }
+  }
+  function tracar(pts){
+    ctx.beginPath(); ctx.moveTo(pts[0][0],pts[0][1]);
+    for(let i=1;i<pts.length;i++) ctx.lineTo(pts[i][0],pts[i][1]);
+    ctx.stroke();
+  }
+  function rede(){
+    ctx.lineWidth = Math.max(0.6, 0.95*DPR);
+    ctx.lineJoin='round';
+    for(let s=0;s<2;s++){                                    // laterais primeiro (mais ao fundo)
+      ctx.strokeStyle = s? 'rgba(226,240,232,.24)' : 'rgba(226,240,232,.32)';
+      for(let i=0;i<SU;i++){ const c=[]; for(let j=0;j<SV;j++) c.push(gridLat[s][i*SV+j]); tracar(c); }
+      for(let j=0;j<SV;j++){ const r=[]; for(let i=0;i<SU;i++) r.push(gridLat[s][i*SV+j]); tracar(r); }
+    }
+    ctx.strokeStyle='rgba(232,244,236,.38)';
+    for(let i=0;i<NU;i++){ const c=[]; for(let j=0;j<NV;j++) c.push(gridFundo[j*NU+i]); tracar(c); }
+    for(let j=0;j<NV;j++){ const r=[]; for(let i=0;i<NU;i++) r.push(gridFundo[j*NU+i]); tracar(r); }
+  }
+
+  /* --- estrutura: traves e barras, espessura por profundidade ------------ */
+  function tubo(a, b, esp, cor, passos){
+    ctx.strokeStyle=cor; ctx.lineCap='round';
+    for(let k=0;k<passos;k++){
+      const t0=k/passos, t1=(k+1)/passos;
+      const p=proj(a[0]+(b[0]-a[0])*t0, a[1]+(b[1]-a[1])*t0, a[2]+(b[2]-a[2])*t0);
+      const q=proj(a[0]+(b[0]-a[0])*t1, a[1]+(b[1]-a[1])*t1, a[2]+(b[2]-a[2])*t1);
+      ctx.lineWidth = Math.max(1, esp*F/((p[2]+q[2])*0.5));
+      ctx.beginPath(); ctx.moveTo(p[0],p[1]); ctx.lineTo(q[0],q[1]); ctx.stroke();
+    }
+  }
+  function estrutura(){
+    tubo([-HW,0.02,-DEEP],[ HW,0.02,-DEEP], 0.042,'rgba(214,228,220,.45)', 8);   // barra de fundo
+    tubo([-HW,0.02,0],[-HW,0.02,-DEEP], 0.05,'rgba(214,228,220,.45)', 5);
+    tubo([ HW,0.02,0],[ HW,0.02,-DEEP], 0.05,'rgba(214,228,220,.45)', 5);
+    tubo([-HW,0,0],[-HW,GH,0], 0.12,'#eef4f0', 3);                               // traves
+    tubo([ HW,0,0],[ HW,GH,0], 0.12,'#dfe8e3', 3);
+    tubo([-HW,GH,0],[ HW,GH,0], 0.12,'#eef4f0', 14);                             // travessão
+    tubo([-HW,GH+0.035,0],[HW,GH+0.035,0], 0.03,'rgba(255,255,255,.55)', 14);    // brilho superior
+  }
+
+  /* --- laço ------------------------------------------------------------- */
+  function medir(){
+    const r = canvas.getBoundingClientRect();
+    DPR = Math.min(window.devicePixelRatio||1, 2);
+    W = Math.max(2, Math.round(r.width*DPR)); H = Math.max(2, Math.round(r.height*DPR));
+    if(canvas.width!==W || canvas.height!==H){
+      canvas.width=W; canvas.height=H;
+      F=1; CX=0; CY=0;                                   // mede a baliza com F unitário
+      let x0=1e9,x1=-1e9,y0=1e9,y1=-1e9;
+      for(const q of [[-HW,0,0],[HW,0,0],[-HW,GH,0],[HW,GH,0],[-HW,0,-DEEP],[HW,0,-DEEP]]){
+        const s=proj(q[0],q[1],q[2]);
+        if(s[0]<x0)x0=s[0]; if(s[0]>x1)x1=s[0]; if(s[1]<y0)y0=s[1]; if(s[1]>y1)y1=s[1];
+      }
+      F  = Math.min(W*0.88/(x1-x0), H*0.60/(y1-y0));         // ocupa 88% da largura / 60% da altura
+      CX = W*0.5 - (x0+x1)*0.5*F;
+      CY = H*0.08 - y0*F;                                    // topo do travessão a 8% do card
+      semear();
+      if(o.aoRedimensionar) o.aoRedimensionar();             // reposiciona os pontos por cima
+    }
+  }
+  function desenhar(t){
+    medir();
+    ctx.clearRect(0,0,W,H);
+    chao();
+    grama(t, 'atras');           // grama atrás da linha de fundo
+    malha(t); rede(); estrutura();
+    grama(t, 'frente');          // grama à frente cobre a base das traves
+  }
+
+  let raf=0, t0=null, visivel=true;
+  const parado = o.estatico || matchMedia('(prefers-reduced-motion: reduce)').matches;
+  function frame(ms){
+    if(t0===null) t0=ms;
+    desenhar((ms-t0)/1000);
+    raf = visivel && !parado ? requestAnimationFrame(frame) : 0;
+  }
+  if(parado){ requestAnimationFrame(()=>desenhar(3.2)); }
+  else{
+    new IntersectionObserver(es=>{                            // pausa fora da tela
+      visivel = es[0].isIntersecting;
+      if(visivel && !raf) raf = requestAnimationFrame(frame);
+    },{threshold:0.01}).observe(canvas);
+  }
+  addEventListener('resize', ()=>{ if(!raf) requestAnimationFrame(()=>desenhar(3.2)); });
+  return {
+    /* ponto do plano da BOCA do gol em px CSS: x 0..1 (esq→dir), y 0..1 (chão→travessão) */
+    boca(x,y){ const q=proj(-HW+GW*x, GH*y, 0); return [q[0]/DPR, q[1]/DPR]; },
+    caixa(){ return [W/DPR, H/DPR]; },
+    destruir(){ cancelAnimationFrame(raf); raf=0; visivel=false; }
+  };
+}
+
+
+/* ===== JS: render — mapa de presença ===== */
+const CAMPO = { el: null, api: null };
+function renderPresence(p){
+  const grid = presenceData(p);                        // [col, linha, valor 0..1]
+  const thirds = [0, 0, 0], lanes = [0, 0, 0];
+  let total = 0;
+  grid.forEach(([i, j, v]) => {
+    thirds[2 - Math.min(2, Math.floor(j / HEAT_ROWS * 3))] += v;   // linha 0 = ataque
+    lanes[Math.min(2, Math.floor(i / HEAT_COLS * 3))] += v; total += v;
+  });
+  const pct = thirds.map(v => Math.round(v / total * 100));
+  pct[1] = 100 - pct[0] - pct[2];
+  const T = ['Terço defensivo', 'Meio-campo', 'Terço ofensivo'], L = ['corredor esq.', 'corredor central', 'corredor dir.'];
+  const top = thirds.indexOf(Math.max(...thirds)), lane = lanes.indexOf(Math.max(...lanes));
+
+  $('#presence').innerHTML = `
+    <div class="card-head"><span class="label">Mapa de Presença</span><span class="chip warn">Simulado</span></div>
+    <div class="card-body scroll">
+    <div class="campo-slot" role="img" aria-label="Mapa de calor 3D da presença de ${p.player_name} em campo"><span class="label dir">Ataque ↑</span></div>
+    <div class="heat-legend"><span class="label">Baixa</span><span class="heat-scale"></span><span class="label">Alta</span></div>
+    <div class="note muted">Zona principal: <b>${T[top].toLowerCase()}</b> · <b>${L[lane]}</b></div>
+    <div class="section">
+      <div class="grid-3">
+        ${metric('Defesa', pct[0], '%', pct[0], top === 0)}
+        ${metric('Meio', pct[1], '%', pct[1], top === 1)}
+        ${metric('Ataque', pct[2], '%', pct[2], top === 2)}
+      </div>
+    </div>
+    </div>`;
+  if (!CAMPO.el){ CAMPO.el = document.createElement('div'); CAMPO.el.className = 'campo3d'; CAMPO.api = campo3D(CAMPO.el, {cols: HEAT_COLS, rows: HEAT_ROWS}); }
+  $('#presence .campo-slot').appendChild(CAMPO.el);
+  CAMPO.api.pintar(grid.map(c => c[2]));
+}
+
+/* ===== JS: render — cobranças de pênalti ===== */
+const GOAL = { box: null, svg: null, api: null, shots: [] };
+const SVG_NS = 'http://www.w3.org/2000/svg';
+function drawGoalOverlay(){
+  if (!GOAL.api) return;
+  const [W, H] = GOAL.api.caixa();
+  if (!W || !H) return;
+  const B = (x, y) => GOAL.api.boca(x, y).map(v => v.toFixed(1));
+  const shots = GOAL.shots;
+  const parts = [];
+  for (let row = 0; row < 2; row++) for (let col = 0; col < 3; col++){
+    const x0 = col / 3 + .015, x1 = (col + 1) / 3 - .015;
+    const yTop = row ? .48 : .96, yBot = row ? .04 : .52;
+    parts.push(`<polygon class="zone" points="${[B(x0, yTop), B(x1, yTop), B(x1, yBot), B(x0, yBot)].map(q => q.join(',')).join(' ')}"/>`);
+    const inZone = shots.filter(s => s.col === col && s.row === row);
+    if (inZone.length){
+      const [tx, ty] = B(x0 + .025, yTop - .16);
+      parts.push(`<text class="zcount" x="${tx}" y="${ty}">${inZone.filter(s => s.result === 'gol').length}/${inZone.length}</text>`);
+    }
+  }
+  const LABEL = {gol: 'Gol', def: 'Defendido', fora: 'Fora / trave'};
+  const COLS = ['esquerdo', 'centro', 'direito'], ROWS = ['alto', 'baixo'];
+  shots.forEach((s, k) => {
+    let x = (s.col + .25 + s.jx * .5) / 3;
+    let y = s.row === 0 ? 1 - (.3 + s.jy * .45) * .5 : .5 - (.3 + s.jy * .45) * .5;
+    if (s.result === 'fora'){
+      if (s.row === 0 || s.col === 1) y = 1.1 + s.jy * .14;              // por cima do travessão
+      else x = s.col === 0 ? -.04 - s.jx * .04 : 1.04 + s.jx * .04;       // ao lado da trave
+    }
+    const [cx, cy] = B(x, y);
+    parts.push(`<circle class="shot ${s.result}" cx="${cx}" cy="${cy}" r="5.5"><title>Cobrança ${k + 1}: ${LABEL[s.result]} · canto ${COLS[s.col]} ${ROWS[s.row]}</title></circle>`);
+  });
+  if (!shots.length){ const [cx, cy] = B(.5, .5); parts.push(`<text class="empty-txt" x="${cx}" y="${cy}" text-anchor="middle">Nenhuma cobrança na temporada</text>`); }
+  parts.push(`<text class="side-txt" x="6" y="${H - 6}">ESQ.</text>`,
+             `<text class="side-txt" x="${W / 2}" y="${H - 6}" text-anchor="middle">VISÃO DO COBRADOR</text>`,
+             `<text class="side-txt" x="${W - 6}" y="${H - 6}" text-anchor="end">DIR.</text>`);
+  GOAL.svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+  GOAL.svg.innerHTML = parts.join('');
+}
+function renderPenalties(p){
+  const shots = penaltyData(p);
+  const scored = shots.filter(s => s.result === 'gol').length;
+  const saved = shots.filter(s => s.result === 'def').length;
+  const wide = shots.filter(s => s.result === 'fora').length;
+  const conv = shots.length ? Math.round(scored / shots.length * 100) : 0;
+
+  $('#penalties').innerHTML = `
+    <div class="card-head"><span class="label">Cobranças de Pênalti</span><span class="chips"><span class="chip ${shots.length ? 'gold' : ''}">${conv}%</span><span class="chip warn">Simulado</span></span></div>
+    <div class="card-body scroll">
+    <div class="grid-3">
+      ${metric('Cobrados', shots.length)}
+      ${metric('Convertidos', scored, '', null, true)}
+      ${metric('Perdidos', saved + wide)}
+    </div>
+    <div class="goal-wrap">
+      <div class="goal-slot" role="img" aria-label="Posição das cobranças de pênalti no gol"></div>
+      <div class="legend">
+        <span class="chip up"><i class="dot-i"></i>Gol ${scored}</span>
+        <span class="chip down"><i class="dot-i"></i>Defendido ${saved}</span>
+        <span class="chip warn"><i class="dot-i"></i>Fora / trave ${wide}</span>
+      </div>
+    </div>
+    </div>`;
+  if (!GOAL.box){
+    GOAL.box = document.createElement('div'); GOAL.box.className = 'goleira-box';
+    const canvas = document.createElement('canvas'); canvas.className = 'goleira';
+    GOAL.svg = document.createElementNS(SVG_NS, 'svg'); GOAL.svg.setAttribute('class', 'goal-overlay');
+    GOAL.box.append(canvas, GOAL.svg);
+    $('#penalties .goal-slot').appendChild(GOAL.box);
+    GOAL.api = goleiraCard(canvas, { vento: .6, aoRedimensionar: drawGoalOverlay });
+  } else {
+    $('#penalties .goal-slot').appendChild(GOAL.box);
+  }
+  GOAL.shots = shots;
+  drawGoalOverlay();
+}
+
+/* ===== JS: carta holográfica ===== */
+const POS_SHORT = {GK:'GOL', CB:'ZAG', LB:'LE', RB:'LD', CM:'MC', LW:'PE', RW:'PD', FW:'ATA'};
+const FLAGS = {'Brasil':'🇧🇷', 'Colômbia':'🇨🇴', 'Equador':'🇪🇨', 'Uruguai':'🇺🇾', 'Espanha':'🇪🇸', 'Venezuela':'🇻🇪', 'Argentina':'🇦🇷', 'Portugal':'🇵🇹'};
+const HOLO_RULE = dynRule('#holo');
+const holoTier = ovr => ovr >= 85 ? ['gold', 'Dourada · OVR 85+'] : ovr >= 75 ? ['emerald', 'Esmeralda · OVR 75–84'] : ['silver', 'Prata · OVR abaixo de 75'];
+
+/* mola: o ponteiro define um alvo e a carta persegue com aceleração e atrito (inércia) */
+function makeSpring(initial, settings, onFrame){
+  const keys = Object.keys(initial), value = {...initial}, target = {...initial}, vel = {};
+  keys.forEach(k => vel[k] = 0);
+  let cfg = {...settings}, raf = null;
+  function frame(){
+    let moving = false;
+    for (const k of keys){
+      const delta = target[k] - value[k];
+      vel[k] += cfg.stiffness * delta - cfg.damping * vel[k];
+      value[k] += vel[k];
+      if (Math.abs(delta) > .01 || Math.abs(vel[k]) > .01) moving = true;
+    }
+    onFrame(value);
+    raf = moving ? requestAnimationFrame(frame) : null;
+  }
+  return { set(next, nextCfg){ if (nextCfg) cfg = {...nextCfg}; Object.assign(target, next); if (raf === null) raf = requestAnimationFrame(frame); } };
+}
+const SPRING_INTERACT = { stiffness: .066, damping: .25 };
+const SPRING_SNAP = { stiffness: .01, damping: .06 };
+function holoInteraction(card, HOLO_RULE){
+  const float = card.closest('.holo-float');
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const r3 = v => Math.round(v * 1000) / 1000, clamp = (v, a = 0, b = 100) => Math.min(Math.max(v, a), b);
+  const adjust = (v, a, b, c, d) => r3(c + (d - c) * (v - a) / (b - a));
+  let snapTimer = null;
+  const spring = makeSpring({rx: 0, ry: 0, gx: 50, gy: 50, o: 0, bx: 50, by: 50}, SPRING_INTERACT, v => {
+    const fc = clamp(Math.hypot(v.gy - 50, v.gx - 50) / 50, 0, 1);
+    const st = HOLO_RULE.style;
+    st.setProperty('--pointer-x', `${r3(v.gx)}%`);
+    st.setProperty('--pointer-y', `${r3(v.gy)}%`);
+    st.setProperty('--pointer-from-center', r3(fc));
+    st.setProperty('--pointer-from-top', r3(v.gy / 100));
+    st.setProperty('--pointer-from-left', r3(v.gx / 100));
+    st.setProperty('--card-opacity', clamp(r3(v.o), 0, 1));
+    st.setProperty('--rotate-x', `${r3(v.rx)}deg`);
+    st.setProperty('--rotate-y', `${r3(v.ry)}deg`);
+    st.setProperty('--background-x', `${r3(v.bx)}%`);
+    st.setProperty('--background-y', `${r3(v.by)}%`);
+  });
+  function interact(e){
+    clearTimeout(snapTimer); float.classList.add('interacting');
+    const pt = e.touches ? e.touches[0] : e, rect = card.getBoundingClientRect();
+    const px = clamp(r3(100 / rect.width * (pt.clientX - rect.left))), py = clamp(r3(100 / rect.height * (pt.clientY - rect.top)));
+    spring.set({ rx: r3(-(px - 50) / 3.5), ry: r3((py - 50) / 3.5), gx: px, gy: py, o: 1,
+                 bx: adjust(px, 0, 100, 37, 63), by: adjust(py, 0, 100, 33, 67) }, SPRING_INTERACT);
+  }
+  function interactEnd(){
+    clearTimeout(snapTimer);
+    snapTimer = setTimeout(() => { float.classList.remove('interacting'); spring.set({rx: 0, ry: 0, gx: 50, gy: 50, o: 0, bx: 50, by: 50}, SPRING_SNAP); }, 500);
+  }
+  card.addEventListener('pointermove', interact);
+  card.addEventListener('pointerleave', interactEnd);
+  card.addEventListener('touchmove', interact, {passive: true});
+  card.addEventListener('touchend', interactEnd);
+  card.addEventListener('touchcancel', interactEnd);
+}
+holoInteraction($('#holo'), HOLO_RULE);
+
+function fillHolo(p, t = {card: $('#holo'), inner: $('#holo-inner'), tier: $('#holo-tier'), rule: HOLO_RULE}){
+  const ovr = Math.round(p.rating * 10);
+  const [tier, tierLabel] = holoTier(ovr);
+  t.card.className = `holo-card tier-${tier} ${clubClass(p.club_name)}`;
+  t.rule.style.setProperty('--hue', `${(p.player_id * 47) % 120 - 60}deg`);   // matiz própria de cada jogador
+  const short = p.player_name.split(' ').length > 1 ? p.player_name.split(' ').slice(-2).join(' ') : p.player_name;
+  const stat = (v, k) => `<div class="holo-stat"><span class="v">${v}</span><span class="k">${k}</span></div>`;
+  t.inner.innerHTML = `
+    <div class="holo-top">
+      <div class="holo-ovr"><div class="ovr">${ovr}</div><div class="pos">${POS_SHORT[p.position]}</div><div class="flag">${FLAGS[p.nationality] || ''}</div></div>
+      <div class="holo-crest"><span class="ini">${initials(p.club_name)}</span>${img(crestPath(p.club_name))}</div>
+    </div>
+    <div class="holo-portrait">
+      <div class="holo-watermark"><span class="ini">${initials(p.club_name)}</span>${img(crestPath(p.club_name))}</div>
+      <div class="holo-glow"></div>
+      <div class="holo-photo"><span class="ini holo-initials">${initials(p.player_name)}</span>${img(cardPath(p))}</div>
+    </div>
+    <div class="holo-banner"><span class="nm">${short.toUpperCase()}</span><span class="cl">${p.club_name} · ${POSITION_LABELS[p.position]}</span></div>
+    <div class="holo-stats">
+      ${stat(p.goals, 'GOL')}${stat(fmt(p.shot_accuracy_pct, 0) + '%', 'CHU')}${stat(p.tackles, 'DES')}
+      ${stat(p.clearances, 'COR')}${stat(fmt(p.pass_accuracy_pct, 0) + '%', 'PAS')}${stat(p.assists, 'ASS')}
+    </div>`;
+  t.tier.textContent = `Carta ${tierLabel}`;
+}
+
+/* troca vertical estritamente sequencial: a carta atual desce até sair da tela e SÓ DEPOIS
+   a próxima sobe de baixo — sem cross-fade nem sobreposição. Cliques rápidos não empilham
+   animações: vale sempre o último jogador pedido. */
+const HOLO = { shown: null, target: null, busy: false };
+async function swapHolo(id){
+  HOLO.target = id;
+  if (HOLO.busy) return;
+  HOLO.busy = true;
+  const el = $('.holo-swap');
+  const still = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  while (HOLO.shown !== HOLO.target){
+    const rect = el.getBoundingClientRect();
+    const dist = Math.max(window.innerHeight - rect.top, rect.height) + 60;   // até passar da borda inferior da tela
+    let out = null;
+    if (HOLO.shown !== null && !still){
+      out = el.animate([{transform: 'translateY(0)'}, {transform: `translateY(${dist}px)`}],
+                       {duration: 420, easing: 'cubic-bezier(.55,0,.8,.25)', fill: 'forwards'});
+      await out.finished;
+    }
+    const next = HOLO.target;          // lido só agora: vale o último jogador pedido durante a descida
+    fillHolo(BY_ID[next]);
+    HOLO.shown = next;
+    if (!still){
+      const inn = el.animate([{transform: `translateY(${dist}px)`}, {transform: 'translateY(0)'}],
+                             {duration: 600, easing: 'cubic-bezier(.16,1,.3,1)', fill: 'forwards'});
+      if (out) out.cancel();
+      await inn.finished;
+      inn.cancel();
+    }
+  }
+  HOLO.busy = false;
+}
+
+/* ----- animação de pontos: ao trocar de jogador, os pontos dos gráficos deslizam até a nova posição ----- */
+const TWEENS = {};
+function tweenPts(key, from, to, apply, ms = 650){
+  if (TWEENS[key]) cancelAnimationFrame(TWEENS[key].raf);
+  const st = TWEENS[key] = { cur: to, raf: 0 };
+  if (!from || matchMedia('(prefers-reduced-motion: reduce)').matches){ apply(to); return; }
+  const t0 = performance.now(), ease = t => 1 - (1 - t) ** 3;
+  const step = now => {
+    const t = Math.min(1, (now - t0) / ms), k = ease(t);
+    st.cur = to.map((p, i) => p.map((v, j) => from[i][j] + (v - from[i][j]) * k));
+    apply(st.cur);
+    if (t < 1) st.raf = requestAnimationFrame(step);
+  };
+  apply(from); st.raf = requestAnimationFrame(step);
+}
+// histórico com tamanhos diferentes: pontos novos saem do último ponto antigo
+const padFrom = (prev, to) => prev && prev.length ? to.map((_, i) => prev[Math.min(i, prev.length - 1)]) : null;
+function applyMarket(svg, P){
+  const base = +svg.dataset.base, f = v => v.toFixed(1);
+  const line = P.map((p, i) => (i ? 'L' : 'M') + f(p[0]) + ' ' + f(p[1])).join(' ');
+  svg.querySelector('.line').setAttribute('d', line);
+  svg.querySelector('.area').setAttribute('d', `${line} L${f(P.at(-1)[0])} ${base} L${f(P[0][0])} ${base} Z`);
+  svg.querySelectorAll('.mark').forEach((c, i) => { c.setAttribute('cx', f(P[i][0])); c.setAttribute('cy', f(P[i][1])); });
+  svg.querySelectorAll('.val').forEach((t, i) => { t.setAttribute('x', f(P[i][0])); t.setAttribute('y', f(P[i][1] - 9)); });
+  svg.querySelectorAll('.tick').forEach((t, i) => t.setAttribute('x', f(P[i][0])));
+}
+function applyRadar(svg, ratios){
+  const W = 334, cx = W / 2, cy = 126, R = 82, n = ratios.length;
+  const ang = i => (-90 + i * 360 / n) * Math.PI / 180;
+  const pt = i => [cx + Math.cos(ang(i)) * R * Math.max(ratios[i], .03), cy + Math.sin(ang(i)) * R * Math.max(ratios[i], .03)];
+  svg.querySelector('.shape').setAttribute('points', ratios.map((_, i) => pt(i).map(v => v.toFixed(1)).join(',')).join(' '));
+  svg.querySelectorAll('.vtx').forEach((c, i) => { const [x, y] = pt(i); c.setAttribute('cx', x.toFixed(1)); c.setAttribute('cy', y.toFixed(1)); });
+}
+
+/* ----- tooltip do gráfico de valor de mercado ----- */
+function mvTip(hit, on){
+  const svg = hit.ownerSVGElement, tip = svg.querySelector('.mv-tip'), mark = svg.querySelectorAll('.mark')[+hit.dataset.i];
+  if (mark) mark.classList.toggle('hover', on);
+  tip.classList.toggle('on', on);
+  if (!on || !mark) return;
+  const x = +mark.getAttribute('cx'), y = +mark.getAttribute('cy'), W = +svg.dataset.w, bw = 96, bh = 38;
+  const tx = Math.min(Math.max(x - bw / 2, 2), W - bw - 2), ty = y - bh - 12 < 0 ? y + 12 : y - bh - 12;
+  tip.setAttribute('transform', `translate(${tx.toFixed(1)} ${ty.toFixed(1)})`);
+  tip.querySelector('.tip-p').textContent = hit.dataset.label;
+  tip.querySelector('.tip-v').textContent = `${hit.dataset.v} mi`;
+}
+document.addEventListener('pointerover', e => { const h = e.target.closest && e.target.closest('.chart .hit'); if (h) mvTip(h, true); });
+document.addEventListener('pointerout', e => { const h = e.target.closest && e.target.closest('.chart .hit'); if (h) mvTip(h, false); });
+
+/* ===== JS: estado + eventos ===== */
+function select(id){
+  state.selected = id;
+  document.querySelectorAll('[data-id]').forEach(el => el.classList.toggle('selected', +el.dataset.id === id));
+  const p = BY_ID[id];
+  renderProfile(p);
+  renderPerformance(p);
+  renderPresence(p);
+  renderPenalties(p);
+  markActiveMetric();
+  swapHolo(id);
+}
+document.addEventListener('click', (e) => {
+  const el = e.target.closest('[data-id]');
+  if (el && CMP.phase === 'pick'){ pickRival(+el.dataset.id); return; }   // modo comparação: a lista escolhe o rival
+  if (el) select(+el.dataset.id);
+});
+$('#search').addEventListener('input', (e) => { state.query = e.target.value; renderRanking(); });
+
+/* ----- métricas clicáveis: clicar numa métrica da ficha/perfil reordena o ranking; clicar de novo volta ao rating ----- */
+function markActiveMetric(){
+  document.querySelectorAll('[data-metric]').forEach(el => el.classList.toggle('active', el.dataset.metric === state.metric));
+}
+function setMetric(key){
+  if (!METRICS[key]) return;
+  state.metric = (state.metric === key && key !== 'rating') ? 'rating' : key;
+  markActiveMetric();
+  renderRanking(true);
+  const first = currentView()[0];
+  if (first && first.player_id !== state.selected) select(first.player_id);
+}
+document.addEventListener('click', (e) => {
+  const m = e.target.closest('[data-metric]');
+  if (m) setMetric(m.dataset.metric);
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape'){ closeMenus(); if (CMP.phase === 'pick') setCmpPhase('off'); else if (CMP.phase === 'on') closeCompare(); }
+  if ((e.key === 'Enter' || e.key === ' ') && e.target.matches && e.target.matches('[data-metric]')){ e.preventDefault(); setMetric(e.target.dataset.metric); }
+});
+
+/* ----- filtros: duas listas suspensas de seleção múltipla (posição e clube) -----
+   Marcar itens só altera um rascunho; o ranking muda quando se clica em "Filtrar" dentro da lista.
+   Fechar sem filtrar descarta o rascunho. */
+const CHECK_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>';
+const GROUP_LABELS = {ataque: 'Ataque', meio: 'Meio-campo', defesa: 'Defesa', goleiro: 'Goleiro'};
+const FILTERS = {
+  pos: {
+    key: 'groups', width: 250, crest: false,
+    opts: Object.keys(POS_GROUPS).map(g => ({id: g, label: GROUP_LABELS[g], n: PLAYERS.filter(pl => POS_GROUPS[g].includes(pl.position)).length}))
+  },
+  club: {
+    key: 'clubs', width: 290, crest: true,
+    opts: CLUBS.map(c => ({id: c, label: c, n: PLAYERS.filter(pl => pl.club_name === c).length}))
+  }
+};
+for (const [id, f] of Object.entries(FILTERS)){ f.id = id; f.draft = new Set(); f.rule = dynRule(`#${id}-menu`); }
+
+function buildMenu(f){
+  $(`#${f.id}-list`).innerHTML = f.opts.map(o => `
+    <button class="dd-item ${f.crest ? '' : 'plain'}" role="menuitemcheckbox" aria-checked="false" data-dd="${f.id}" data-opt="${o.id}">
+      <span class="check">${CHECK_SVG}</span>${f.crest ? crest(o.label) : ''}<span class="nm">${o.label}</span>
+      <span class="n">${o.n}</span>
+    </button>`).join('');
+}
+/* resultado que o filtro daria com o rascunho atual (mostrado no botão "Filtrar") */
+function previewCount(f){
+  const groups = f.key === 'groups' ? f.draft : state.groups, clubs = f.key === 'clubs' ? f.draft : state.clubs;
+  return currentView(groups, clubs).length;
+}
+function renderMenu(f){
+  document.querySelectorAll(`[data-dd="${f.id}"]`).forEach(b => b.setAttribute('aria-checked', f.draft.has(b.dataset.opt)));
+  $(`#${f.id}-apply`).textContent = `Filtrar (${previewCount(f)})`;
+}
+function renderFilters(){
+  for (const f of Object.values(FILTERS)){
+    const n = state[f.key].size, cnt = $(`#${f.id}-count`);
+    cnt.hidden = !n; cnt.textContent = n;
+    $(`#${f.id}-btn`).classList.toggle('on', n > 0);
+  }
+  $('#filter-clear').hidden = !(state.groups.size || state.clubs.size);
+}
+function placeMenu(f){
+  const r = $(`#${f.id}-btn`).getBoundingClientRect();
+  f.rule.style.setProperty('width', `${f.width}px`);
+  f.rule.style.setProperty('left', `${Math.max(15, Math.min(r.left, innerWidth - f.width - 15))}px`);
+  f.rule.style.setProperty('top', `${r.bottom + 8}px`);
+}
+function closeMenus(){
+  for (const f of Object.values(FILTERS)){ $(`#${f.id}-menu`).hidden = true; $(`#${f.id}-btn`).setAttribute('aria-expanded', 'false'); }
+}
+function openMenu(f){
+  closeMenus();
+  f.draft = new Set(state[f.key]);              // começa do filtro aplicado
+  renderMenu(f); placeMenu(f);
+  $(`#${f.id}-menu`).hidden = false; $(`#${f.id}-btn`).setAttribute('aria-expanded', 'true');
+}
+function applyMenu(f){
+  state[f.key] = new Set(f.draft);
+  closeMenus(); renderFilters(); renderRanking(true);
+}
+function toggleIn(set, v){ set.has(v) ? set.delete(v) : set.add(v); }
+document.addEventListener('click', (e) => {
+  const opt = e.target.closest('[data-dd]');
+  if (opt){ const f = FILTERS[opt.dataset.dd]; toggleIn(f.draft, opt.dataset.opt); renderMenu(f); return; }
+  const ap = e.target.closest('[data-dd-apply]');
+  if (ap){ applyMenu(FILTERS[ap.dataset.ddApply]); return; }
+  const cl = e.target.closest('[data-dd-clear]');
+  if (cl){ const f = FILTERS[cl.dataset.ddClear]; f.draft.clear(); applyMenu(f); return; }
+  const btn = e.target.closest('#pos-btn, #club-btn');
+  if (btn){ const f = FILTERS[btn.id.replace('-btn', '')]; $(`#${f.id}-menu`).hidden ? openMenu(f) : closeMenus(); return; }
+  if (e.target.closest('#filter-clear')){ state.groups.clear(); state.clubs.clear(); closeMenus(); renderFilters(); renderRanking(true); return; }
+  if (!e.target.closest('.dropdown')) closeMenus();
+});
+addEventListener('resize', () => { for (const f of Object.values(FILTERS)) if (!$(`#${f.id}-menu`).hidden) placeMenu(f); });
+Object.values(FILTERS).forEach(buildMenu);
+renderFilters();
+
+/* ===== JS: comparação entre dois jogadores =====
+   Fluxo: botão "Comparar" → clicar no rival na lista atual → os cards do dash somem e entra o painel central
+   (radar sobreposto + métricas) com a carta de cada jogador ao lado; a do rival sobe com slide up.
+   O mesmo botão encerra a comparação e os cards voltam. */
+const CMP = { phase: 'off', a: null, b: null, busy: false };   // phase: off | pick (escolhendo o rival) | on
+const CMP_ROWS = [   // métricas abaixo do radar: [chave, rótulo, casas decimais, unidade]
+  ['rating', 'Rating geral', 1, ''],
+  ['shots_total', 'Chutes totais', 0, ''], ['shots_on_target', 'Chutes no alvo', 0, ''], ['shot_accuracy_pct', 'Precisão de chute', 1, '%'],
+  ['passes_total', 'Passes totais', 0, ''], ['passes_completed', 'Passes certos', 0, ''], ['pass_accuracy_pct', 'Precisão de passe', 1, '%']
+];
+const holoShell = k => `<div class="holo-swap"><div class="holo-wrap"><div class="holo-float"><div class="holo-card" id="holo-${k}">
+  <div class="holo-foil"></div><div class="holo-shine"></div><div class="holo-glare"></div><div class="holo-inner" id="holo-${k}-inner"></div><div class="holo-edge"></div>
+  </div></div></div><div class="holo-shadow" aria-hidden="true"></div><span class="label holo-tier" id="holo-${k}-tier"></span></div>`;
+const CMP_HOLO = {};
+for (const k of ['a', 'b']){
+  $(`#cmp-${k}-col`).innerHTML = holoShell(k);
+  CMP_HOLO[k] = { card: $(`#holo-${k}`), inner: $(`#holo-${k}-inner`), tier: $(`#holo-${k}-tier`), rule: dynRule(`#holo-${k}`) };
+  holoInteraction(CMP_HOLO[k].card, CMP_HOLO[k].rule);
+}
+const cmpCls = (x, y) => x > y ? 'win' : x < y ? 'lose' : '';
+
+/* radar com os dois jogadores sobrepostos (mesma escala do radar individual: maior valor do campeonato) */
+function radarOverlay(a, b){
+  const W = 334, H = 262, cx = W / 2, cy = 126, R = 82, n = RADAR_STATS.length;
+  const ang = i => (-90 + i * 360 / n) * Math.PI / 180;
+  const pt = (i, r) => [cx + Math.cos(ang(i)) * r, cy + Math.sin(ang(i)) * r];
+  const poly = r => RADAR_STATS.map((_, i) => pt(i, r).map(v => v.toFixed(1)).join(',')).join(' ');
+  const ratios = p => RADAR_STATS.map(([k]) => Math.min(1, p[k] / radarMax(k)));
+  const shape = r => r.map((v, i) => pt(i, R * Math.max(v, .03)).map(c => c.toFixed(1)).join(',')).join(' ');
+  const dots = (r, cls, p) => r.map((v, i) => { const [x, y] = pt(i, R * Math.max(v, .03));
+    return `<circle class="vtx ${cls}" cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="3.2"><title>${p.player_name} · ${RADAR_STATS[i][1]}: ${fmt(p[RADAR_STATS[i][0]])}</title></circle>`; }).join('');
+  const ra = ratios(a), rb = ratios(b);
+  const labels = RADAR_STATS.map(([k, name], i) => {
+    const [x, y] = pt(i, R + 26), c = Math.cos(ang(i));
+    const anchor = c > .3 ? 'start' : c < -.3 ? 'end' : 'middle';
+    const dy = Math.sin(ang(i)) < -.9 ? -6 : Math.sin(ang(i)) > .9 ? 4 : -2;
+    return `<text class="rl" x="${x.toFixed(1)}" y="${(y + dy).toFixed(1)}" text-anchor="${anchor}">${name}</text>
+      <text class="rv" x="${x.toFixed(1)}" y="${(y + dy + 15).toFixed(1)}" text-anchor="${anchor}"><tspan class="a ${cmpCls(a[k], b[k])}">${fmt(a[k])}</tspan><tspan class="sep"> · </tspan><tspan class="b ${cmpCls(b[k], a[k])}">${fmt(b[k])}</tspan></text>`;
+  }).join('');
+  return `<svg class="radar" viewBox="0 0 ${W} ${H}" role="img" aria-label="Radar sobreposto de ${a.player_name} e ${b.player_name}">
+    ${[.25, .5, .75, 1].map(r => `<polygon class="ring ${r === 1 ? 'outer' : ''}" points="${poly(R * r)}"/>`).join('')}
+    ${RADAR_STATS.map((_, i) => { const [x, y] = pt(i, R); return `<line class="spoke" x1="${cx}" y1="${cy}" x2="${x.toFixed(1)}" y2="${y.toFixed(1)}"/>`; }).join('')}
+    <polygon class="shape b" points="${shape(rb)}"/><polygon class="shape" points="${shape(ra)}"/>
+    ${dots(rb, 'b', b)}${dots(ra, 'a', a)}
+    ${labels}
+  </svg>`;
+}
+
+function renderCompare(a, b){
+  let wa = 0, wb = 0;
+  [...RADAR_STATS, ...CMP_ROWS].forEach(([k]) => { if (a[k] > b[k]) wa++; else if (b[k] > a[k]) wb++; });
+  const side = (v, o, cls, top, d, u) => `<div class="cmp-side ${cls} ${cmpCls(v, o)}">
+      <span class="cmp-v">${v > o ? '<em class="cmp-mark">▲</em>' : ''}${fmt(v, d)}${u}</span>
+      <span class="bar"><i class="w${Math.round(v / top * 20) * 5}"></i></span></div>`;
+  const rows = CMP_ROWS.map(([k, label, d, u]) => {
+    const top = Math.max(a[k], b[k]) || 1;
+    return `<div class="cmp-row">${side(a[k], b[k], 'a', top, d, u)}<span class="label cmp-k">${label}</span>${side(b[k], a[k], 'b', top, d, u)}</div>`;
+  }).join('');
+  const id = (p, cls) => `<div class="cmp-id ${cls}"><span class="nm">${p.player_name}</span><span class="muted">${p.club_name} · ${POSITION_LABELS[p.position]}</span></div>`;
+  $('#cmp-panel').innerHTML = `
+    <div class="card-head"><span class="label">Comparação · Perfil de desempenho</span><span class="chip gold">${RADAR_STATS.length + CMP_ROWS.length} métricas</span></div>
+    <div class="card-body scroll">
+      <div class="cmp-vs">${id(a, 'a')}
+        <div class="cmp-score"><span class="sc"><span class="a">${wa}</span><span class="x">×</span><span class="b">${wb}</span></span><span class="label">Métricas lideradas</span></div>
+        ${id(b, 'b')}</div>
+      <div class="section"><span class="label">Atributos sobrepostos</span>${radarOverlay(a, b)}<span class="label caption">Escala: maior valor do campeonato · o menor valor de cada eixo aparece esmaecido</span></div>
+      <div class="section"><span class="label">Demais métricas</span>${rows}</div>
+    </div>`;
+}
+
+function setCmpPhase(phase){
+  CMP.phase = phase;
+  const app = $('.app'), btn = $('#cmp-btn'), hint = $('#cmp-hint');
+  app.classList.toggle('picking', phase === 'pick');
+  btn.setAttribute('aria-pressed', phase !== 'off');
+  btn.classList.toggle('on', phase !== 'off');
+  $('#cmp-label').textContent = phase === 'off' ? 'Comparar' : phase === 'pick' ? 'Cancelar' : 'Sair da comparação';
+  hint.hidden = phase === 'off';
+  if (phase === 'pick') hint.textContent = `Clique, na lista, no jogador para comparar com ${BY_ID[CMP.a].player_name}`;
+  if (phase === 'on') hint.textContent = `${BY_ID[CMP.a].player_name} × ${BY_ID[CMP.b].player_name}`;
+}
+const cmpStill = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
+/* slides: cada card sai/entra pela borda mais próxima — laterais pelos lados, centro por baixo */
+const offLeft  = el => `translateX(${-(el.getBoundingClientRect().right + 40)}px)`;
+const offRight = el => `translateX(${innerWidth - el.getBoundingClientRect().left + 40}px)`;
+const offDown  = el => `translateY(${Math.max(innerHeight - el.getBoundingClientRect().top, 0) + 60}px)`;
+const SLIDE_OUT = { duration: 460, easing: 'cubic-bezier(.55,0,.8,.25)', fill: 'forwards' };
+const SLIDE_IN  = { duration: 720, easing: 'cubic-bezier(.16,1,.3,1)', fill: 'both' };
+const slideOut = moves => moves.map(([el, to]) => el.animate([{transform: 'none'}, {transform: to}], SLIDE_OUT));
+const slideIn  = moves => moves.map(([el, from, delay = 0]) => el.animate([{transform: from}, {transform: 'none'}], {...SLIDE_IN, delay}));
+const finished = anims => Promise.all(anims.map(a => a.finished));
+const dashMoves = () => { const L = $('.side-l'), R = $('.side-r'), F = $('.field'); return [[L, offLeft(L)], [R, offRight(R)], [F, offDown(F)]]; };
+const cmpMoves  = () => { const A = $('#cmp-a-col'), P = $('#cmp-panel'), B = $('#cmp-b-col'); return [[A, offLeft(A)], [P, offDown(P), 90], [B, offDown(B), 220]]; };
+
+function pickRival(id){
+  if (id === CMP.a || CMP.busy) return;       // não compara o jogador com ele mesmo
+  openCompare(id);
+}
+async function openCompare(bid){
+  CMP.busy = true; CMP.b = bid;
+  const a = BY_ID[CMP.a], b = BY_ID[bid], app = $('.app');
+  setCmpPhase('on'); closeMenus();
+  renderCompare(a, b); fillHolo(a, CMP_HOLO.a); fillHolo(b, CMP_HOLO.b);
+  if (cmpStill()){ app.classList.add('comparing'); $('#compare').hidden = false; CMP.busy = false; return; }
+  document.body.classList.add('sliding');
+  const out = slideOut(dashMoves()); await finished(out);
+  app.classList.add('comparing'); $('#compare').hidden = false;
+  const inn = slideIn(cmpMoves()); out.forEach(x => x.cancel());   // mesmo quadro: sem piscar
+  await finished(inn); inn.forEach(x => x.cancel());
+  document.body.classList.remove('sliding');
+  CMP.busy = false;
+}
+async function closeCompare(){
+  CMP.busy = true;
+  const cmp = $('#compare'), app = $('.app');
+  if (cmpStill()){ cmp.hidden = true; app.classList.remove('comparing'); setCmpPhase('off'); CMP.busy = false; return; }
+  document.body.classList.add('sliding');
+  const out = slideOut(cmpMoves().map(([el, to]) => [el, to])); await finished(out);
+  cmp.hidden = true; app.classList.remove('comparing'); setCmpPhase('off');
+  const inn = slideIn(dashMoves().map(([el, from], i) => [el, from, [0, 90, 160][i]])); out.forEach(x => x.cancel());
+  await finished(inn); inn.forEach(x => x.cancel());
+  document.body.classList.remove('sliding');
+  CMP.busy = false;
+}
+$('#cmp-btn').addEventListener('click', () => {
+  if (CMP.busy) return;
+  if (CMP.phase === 'off'){ CMP.a = state.selected; closeMenus(); setCmpPhase('pick'); }
+  else if (CMP.phase === 'pick') setCmpPhase('off');
+  else closeCompare();
+});
+
+if (matchMedia('(prefers-reduced-motion: reduce)').matches){ const v = $('#bg-video'); v.removeAttribute('autoplay'); v.pause(); }
+
+renderRanking();
+select(state.selected);
+</script>
+</body>
+</html>
